@@ -150,7 +150,59 @@
 
 
     // ============================================================
-    // FIGURE 5-15: RATE OF CLIMB
+    // FIGURE 5-37: TIME, FUEL, DISTANCE TO DESCEND
+    // 2500 RPM, 122 KIAS, Flaps UP, 2550 LB
+    // Same subtraction method as climb
+    // POH example: cruise 6000ft/15°C minus depart 2500ft/21°C
+    //   Time: 18-6=10min, Fuel: 3.2-1.3=1.9gal, Dist: 33-13=20nm
+    // ============================================================
+    const desTimeData = {
+      0:     { '0': 0 },
+      1000:  { '-2': 6,    '20': 5.5,  '47.8': 4.5 },
+      2000:  { '-4': 6,    '20': 5,    '46': 4.5   },
+      4000:  { '-8': 11.5, '17.5': 10.5,'42': 9.5  },
+      6000:  { '-2': 17.3, '12.5': 16, '37.7': 14.5},
+      8000:  { '-16': 22.5,'10': 21,   '34': 19    },
+      10000: { '-20': 28,  '5': 26,    '30': 24    },
+    };
+    const desFuelData = {
+      0:     [[0, 0]],
+      1000:  [[-2, 0.54],  [20, 0.5],  [47.8, 0.45]],
+      2000:  [[-4, 1.15],  [20, 1.1],  [46, 1.0]   ],
+      4000:  [[-7.8, 2.3], [15, 2.15], [42, 2.0]   ],
+      6000:  [[-2.3, 3.5], [15, 3.2],  [37.7, 2.9] ],
+      8000:  [[-16, 4.6],  [10, 4.23], [34, 3.9]   ],
+      10000: [[-20, 5.75], [5, 5.25],  [30, 4.8]   ],
+    };
+    const desDistData = {
+      0:     { '0': 0 },
+      1000:  { '-2.3': 5.5,  '20': 5,    '47.8': 4.5  },
+      2000:  { '-4': 11.5,   '20': 10,   '46': 9.5    },
+      4000:  { '-7.8': 22.8, '15': 21.9, '42': 19.5   },
+      6000:  { '-2.3': 35,   '15': 32.3, '37.7': 29.5 },
+      8000:  { '-16': 47.8,  '10': 43.8, '34': 40     },
+      10000: { '-20': 60,    '5': 55.5,  '30': 50.05  },
+    };
+
+    function desFuelInterp(altFt, oat) {
+      const altKeys = Object.keys(desFuelData).map(Number).sort((a,b) => a-b);
+      const clamped = Math.max(altKeys[0], Math.min(altKeys[altKeys.length-1], altFt));
+      for (let i = 0; i < altKeys.length-1; i++) {
+        if (clamped >= altKeys[i] && clamped <= altKeys[i+1]) {
+          const lo = tfdFuelInterpOAT(desFuelData[altKeys[i]], oat);
+          const hi = tfdFuelInterpOAT(desFuelData[altKeys[i+1]], oat);
+          return lo + (hi - lo) * (clamped - altKeys[i]) / (altKeys[i+1] - altKeys[i]);
+        }
+      }
+      return tfdFuelInterpOAT(desFuelData[altKeys[altKeys.length-1]], oat);
+    }
+
+    function calculateDescent(cruiseAlt, destAlt, oatCruiseC, oatDestC) {
+      const timeMin = Math.max(0, tfdInterpAltOAT(desTimeData, cruiseAlt, oatCruiseC) - tfdInterpAltOAT(desTimeData, destAlt, oatDestC));
+      const fuelGal = Math.max(0, desFuelInterp(cruiseAlt, oatCruiseC) - desFuelInterp(destAlt, oatDestC));
+      const distNM  = Math.max(0, tfdInterpAltOAT(desDistData, cruiseAlt, oatCruiseC) - tfdInterpAltOAT(desDistData, destAlt, oatDestC));
+      return { timeMin, fuelGal, distNM };
+    }
     // ROC = 742.1 - (49.31 × alt_thousands) - (3.06 × OAT_celsius)
     // ============================================================
     function calculateROC(altFt, oatC) {
@@ -385,10 +437,11 @@
         </div>
       );
     }
-    function ResultCard({ label, value, unit }) {
+    function ResultCard({ label, value, unit, color }) {
+      const c = color || C.green;
       return (
-        <div style={{ background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "16px 12px", textAlign: "center" }}>
-          <div style={{ fontSize: "18px", letterSpacing: "2px", color: C.green, marginBottom: "8px" }}>{label}</div>
+        <div style={{ background: C.input, border: `1px solid ${c}55`, borderRadius: "3px", padding: "16px 12px", textAlign: "center" }}>
+          <div style={{ fontSize: "18px", letterSpacing: "2px", color: c, marginBottom: "8px" }}>{label}</div>
           <div style={{ fontSize: "36px", color: C.text, lineHeight: 1 }}>{value}</div>
           <div style={{ fontSize: "13px", color: C.dim, marginTop: "6px", letterSpacing: "2px" }}>{unit}</div>
         </div>
@@ -426,35 +479,54 @@
     function TimeFuelDistTab({ savedState, onStateChange }) {
       const [departAlt, setDepartAlt] = useState(savedState.departAlt || "");
       const [cruiseAlt, setCruiseAlt] = useState(savedState.cruiseAlt || "");
+      const [destAlt, setDestAlt] = useState(savedState.destAlt || "");
       const [oatDep, setOatDep] = useState(savedState.oatDep || "");
       const [oatCruise, setOatCruise] = useState(savedState.oatCruise || "");
+      const [oatDest, setOatDest] = useState(savedState.oatDest || "");
       const [tempUnit, setTempUnit] = useState(savedState.tempUnit || "C");
       const [result, setResult] = useState(savedState.result || null);
       const [error, setError] = useState("");
 
       useEffect(() => {
-        onStateChange({ departAlt, cruiseAlt, oatDep, oatCruise, tempUnit, result });
-      }, [departAlt, cruiseAlt, oatDep, oatCruise, tempUnit, result]);
+        onStateChange({ departAlt, cruiseAlt, destAlt, oatDep, oatCruise, oatDest, tempUnit, result });
+      }, [departAlt, cruiseAlt, destAlt, oatDep, oatCruise, oatDest, tempUnit, result]);
 
       const handleCalculate = useCallback(() => {
         setError(""); setResult(null);
         const dep = parseFloat(departAlt), cruise = parseFloat(cruiseAlt);
+        const dest = parseFloat(destAlt) || 0;
         let oatDepC = parseFloat(oatDep), oatCruiseC = parseFloat(oatCruise);
-        if (isNaN(dep) || isNaN(cruise) || isNaN(oatDepC) || isNaN(oatCruiseC)) { setError("Please fill in all fields."); return; }
-        if (tempUnit === "F") { oatDepC = (oatDepC - 32) * 5 / 9; oatCruiseC = (oatCruiseC - 32) * 5 / 9; }
+        let oatDestC = parseFloat(oatDest);
+        if (isNaN(dep) || isNaN(cruise) || isNaN(oatDepC) || isNaN(oatCruiseC)) { setError("Please fill in departure, cruise altitude and both OATs."); return; }
+        if (tempUnit === "F") { oatDepC = (oatDepC-32)*5/9; oatCruiseC = (oatCruiseC-32)*5/9; if (!isNaN(oatDestC)) oatDestC = (oatDestC-32)*5/9; }
         if (dep >= cruise) { setError("Cruise altitude must be above departure altitude."); return; }
         if (dep < 0 || cruise > 12000) { setError("Altitudes must be between 0 and 12,000 ft."); return; }
         if (oatDepC < -25 || oatDepC > 50 || oatCruiseC < -25 || oatCruiseC > 50) { setError("OAT out of chart range (approx −25°C to 50°C)."); return; }
-        setResult(calculateTimeFuelDist(dep, cruise, oatDepC, oatCruiseC));
-      }, [departAlt, cruiseAlt, oatDep, oatCruise, tempUnit]);
+        const climb = calculateTimeFuelDist(dep, cruise, oatDepC, oatCruiseC);
+        let descent = null;
+        if (!isNaN(oatDestC) && !isNaN(dest) && dest < cruise) {
+          descent = calculateDescent(cruise, dest, oatCruiseC, oatDestC);
+        }
+        setResult({ ...climb, descent });
+      }, [departAlt, cruiseAlt, destAlt, oatDep, oatCruise, oatDest, tempUnit]);
 
       return (
         <Card>
-          <div style={{ display: "flex", flexDirection: "column", gap: "20px", marginBottom: "28px" }}>
-            <InputField label="DEPARTURE PRESS. ALT." unit="FT" value={departAlt} onChange={setDepartAlt} placeholder="e.g. 2000" hint="0 – 12,000 ft" />
-            <InputField label="CRUISE PRESS. ALT." unit="FT" value={cruiseAlt} onChange={setCruiseAlt} placeholder="e.g. 6000" hint="Above departure" />
-            <TempField label="OAT AT DEPARTURE" value={oatDep} onChange={setOatDep} unit={tempUnit} onUnitChange={setTempUnit} />
-            <TempField label="OAT AT CRUISE ALT." value={oatCruise} onChange={setOatCruise} unit={tempUnit} onUnitChange={setTempUnit} />
+          <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `1px solid ${C.border}` }}>
+            <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.green, marginBottom: "6px" }}>CLIMB · FIG 5-17</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              <InputField label="DEPARTURE PRESS. ALT." unit="FT" value={departAlt} onChange={setDepartAlt} placeholder="e.g. 2000" hint="0 – 12,000 ft" />
+              <InputField label="CRUISE PRESS. ALT." unit="FT" value={cruiseAlt} onChange={setCruiseAlt} placeholder="e.g. 6000" hint="Above departure" />
+              <TempField label="OAT AT DEPARTURE" value={oatDep} onChange={setOatDep} unit={tempUnit} onUnitChange={setTempUnit} />
+              <TempField label="OAT AT CRUISE ALT." value={oatCruise} onChange={setOatCruise} unit={tempUnit} onUnitChange={setTempUnit} />
+            </div>
+          </div>
+          <div style={{ marginBottom: "28px" }}>
+            <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.cool, marginBottom: "16px" }}>DESCENT · FIG 5-37 <span style={{ fontSize: "11px", color: C.dimmest }}>(optional)</span></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              <InputField label="DESTINATION PRESS. ALT." unit="FT" value={destAlt} onChange={setDestAlt} placeholder="e.g. 1000" hint="Below cruise alt (leave blank to skip)" />
+              <TempField label="OAT AT DESTINATION" value={oatDest} onChange={setOatDest} unit={tempUnit} onUnitChange={setTempUnit} />
+            </div>
           </div>
           {error && <ErrorBox msg={error} />}
           <CalcButton onClick={handleCalculate} />
@@ -463,20 +535,30 @@
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                 <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green }}>RESULTS</div>
                 <div style={{ display: "flex", gap: "6px" }}>
-                  <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevDep > 5 ? C.warm : result.isaDevDep < -5 ? C.cool : C.dim, background: C.input, border: `1px solid ${C.border}`, padding: "3px 8px", borderRadius: "2px" }}>
-                    DEP {formatISA(result.isaDevDep)}
-                  </div>
-                  <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevCruise > 5 ? C.warm : result.isaDevCruise < -5 ? C.cool : C.dim, background: C.input, border: `1px solid ${C.border}`, padding: "3px 8px", borderRadius: "2px" }}>
-                    CRZ {formatISA(result.isaDevCruise)}
-                  </div>
+                  <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevDep > 5 ? C.warm : result.isaDevDep < -5 ? C.cool : C.dim, background: C.input, border: `1px solid ${C.border}`, padding: "3px 8px", borderRadius: "2px" }}>DEP {formatISA(result.isaDevDep)}</div>
+                  <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevCruise > 5 ? C.warm : result.isaDevCruise < -5 ? C.cool : C.dim, background: C.input, border: `1px solid ${C.border}`, padding: "3px 8px", borderRadius: "2px" }}>CRZ {formatISA(result.isaDevCruise)}</div>
                 </div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
-                <ResultCard label="TIME" value={result.timeMin.toFixed(1)} unit="MIN" />
-                <ResultCard label="FUEL" value={result.fuelGal.toFixed(1)} unit="GAL" />
-                <ResultCard label="DIST" value={result.distNM.toFixed(1)} unit="NM" />
+
+              {/* Climb results */}
+              <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.green, marginBottom: "8px" }}>CLIMB · FIG 5-17</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                <ResultCard label="TIME" value={result.timeMin.toFixed(1)} unit="MIN" color={C.green} />
+                <ResultCard label="FUEL" value={result.fuelGal.toFixed(2)} unit="GAL" color={C.green} />
+                <ResultCard label="DIST" value={result.distNM.toFixed(1)} unit="NM" color={C.green} />
               </div>
-              <NoteBox text="Fuel includes start, taxi & takeoff allowance (per POH chart). Interpolated from Figure 5-17. Always verify against official charts." />
+
+              {/* Descent results */}
+              {result.descent && (<>
+                <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.cool, marginBottom: "8px" }}>DESCENT · FIG 5-37</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+                  <ResultCard label="TIME" value={result.descent.timeMin.toFixed(1)} unit="MIN" color={C.cool} />
+                  <ResultCard label="FUEL" value={result.descent.fuelGal.toFixed(2)} unit="GAL" color={C.cool} />
+                  <ResultCard label="DIST" value={result.descent.distNM.toFixed(1)} unit="NM" color={C.cool} />
+                </div>
+              </>)}
+
+              <NoteBox text="Climb fuel includes start, taxi & takeoff allowance (Fig 5-17). Descent: 2500 RPM, 122 KIAS, flaps UP (Fig 5-37). Always verify against official charts." />
             </div>
           )}
         </Card>
