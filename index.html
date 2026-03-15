@@ -41,6 +41,17 @@
     const getISATemp = (altFt) => 15 - (altFt / 1000) * 1.98;
     function lerp(a, b, t) { return a + (b - a) * t; }
     function getISADeviation(altFt, oatC) { return oatC - getISATemp(altFt); }
+    function getDensityAlt(altFt, oatC) {
+      // Precise density altitude per ICAO ISA model
+      // Pressure ratio at pressure altitude using ISA lapse rate (0.0019812 K/ft)
+      const T0 = 288.15;
+      const T_isa_K = T0 - 0.0019812 * altFt;
+      const T_oat_K = oatC + 273.15;
+      const pressureRatio = Math.pow(T_isa_K / T0, 5.2561);
+      // Density ratio: rho/rho0 = (P/P0) * (T0/T_actual)
+      const densityRatio = pressureRatio * (T0 / T_oat_K);
+      return Math.round(145366 * (1 - Math.pow(densityRatio, 0.235)));
+    }
 
     // ============================================================
     // FIGURE 5-17: TIME, FUEL, DISTANCE TO CLIMB
@@ -310,7 +321,7 @@
       const mobile = React.useContext(MobileContext);
       return <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: "4px", padding: mobile ? "16px" : "32px", boxShadow: "0 0 80px rgba(90,138,106,0.10)" }}>{children}</div>;
     }
-    function TempField({ value, onChange, unit, onUnitChange, label = "OAT AT DEPARTURE" }) {
+    function TempField({ value, onChange, unit, onUnitChange, label = "OAT AT DEPARTURE", hint = "−25°C to 50°C chart range" }) {
       return (
         <div>
           <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green, marginBottom: "8px", textTransform: "uppercase" }}>{label}</div>
@@ -325,7 +336,7 @@
               }}>°{u}</button>
             ))}
           </div>
-          <div style={{ fontSize: "18px", color: C.dimmest, marginTop: "5px", letterSpacing: "1px", fontSize: "13px" }}>−25°C to 50°C chart range</div>
+          <div style={{ fontSize: "18px", color: C.dimmest, marginTop: "5px", letterSpacing: "1px", fontSize: "13px" }}>{hint}</div>
         </div>
       );
     }
@@ -402,14 +413,18 @@
     // ============================================================
     // TAB 1: TIME, FUEL, DISTANCE
     // ============================================================
-    function TimeFuelDistTab() {
-      const [departAlt, setDepartAlt] = useState("");
-      const [cruiseAlt, setCruiseAlt] = useState("");
-      const [oatDep, setOatDep] = useState("");
-      const [oatCruise, setOatCruise] = useState("");
-      const [tempUnit, setTempUnit] = useState("C");
-      const [result, setResult] = useState(null);
+    function TimeFuelDistTab({ savedState, onStateChange }) {
+      const [departAlt, setDepartAlt] = useState(savedState.departAlt || "");
+      const [cruiseAlt, setCruiseAlt] = useState(savedState.cruiseAlt || "");
+      const [oatDep, setOatDep] = useState(savedState.oatDep || "");
+      const [oatCruise, setOatCruise] = useState(savedState.oatCruise || "");
+      const [tempUnit, setTempUnit] = useState(savedState.tempUnit || "C");
+      const [result, setResult] = useState(savedState.result || null);
       const [error, setError] = useState("");
+
+      useEffect(() => {
+        onStateChange({ departAlt, cruiseAlt, oatDep, oatCruise, tempUnit, result });
+      }, [departAlt, cruiseAlt, oatDep, oatCruise, tempUnit, result]);
 
       const handleCalculate = useCallback(() => {
         setError(""); setResult(null);
@@ -461,12 +476,16 @@
     // ============================================================
     // TAB 2: RATE OF CLIMB
     // ============================================================
-    function RateOfClimbTab() {
-      const [alt, setAlt] = useState("");
-      const [oat, setOat] = useState("");
-      const [tempUnit, setTempUnit] = useState("C");
-      const [result, setResult] = useState(null);
+    function RateOfClimbTab({ savedState, onStateChange }) {
+      const [alt, setAlt] = useState(savedState.alt || "");
+      const [oat, setOat] = useState(savedState.oat || "");
+      const [tempUnit, setTempUnit] = useState(savedState.tempUnit || "C");
+      const [result, setResult] = useState(savedState.result || null);
       const [error, setError] = useState("");
+
+      useEffect(() => {
+        onStateChange({ alt, oat, tempUnit, result });
+      }, [alt, oat, tempUnit, result]);
 
       const handleCalculate = useCallback(() => {
         setError(""); setResult(null);
@@ -512,15 +531,19 @@
     // ============================================================
     // TAB 3: CRUISE PERFORMANCE (65%)
     // ============================================================
-    function CruiseTab() {
-      const [alt, setAlt] = useState("");
-      const [oat, setOat] = useState("");
-      const [tempUnit, setTempUnit] = useState("C");
-      const [power, setPower] = useState("65");
-      const [wheelPants, setWheelPants] = useState(true);
-      const [reserve, setReserve] = useState("none");
-      const [result, setResult] = useState(null);
+    function CruiseTab({ savedState, onStateChange }) {
+      const [alt, setAlt] = useState(savedState.alt || "");
+      const [oat, setOat] = useState(savedState.oat || "");
+      const [tempUnit, setTempUnit] = useState(savedState.tempUnit || "C");
+      const [power, setPower] = useState(savedState.power || "65");
+      const [wheelPants, setWheelPants] = useState(savedState.wheelPants !== undefined ? savedState.wheelPants : true);
+      const [reserve, setReserve] = useState(savedState.reserve || "none");
+      const [result, setResult] = useState(savedState.result || null);
       const [error, setError] = useState("");
+
+      useEffect(() => {
+        onStateChange({ alt, oat, tempUnit, power, wheelPants, reserve, result });
+      }, [alt, oat, tempUnit, power, wheelPants, reserve, result]);
 
       const runCalc = useCallback((pwr, pants) => {
         const altVal = parseFloat(alt);
@@ -622,39 +645,48 @@
       1500: [[2000, 850],  [2150, 1030], [2250, 1180], [2350, 1300], [2450, 1400], [2550, 1500]],
       2000: [[2000, 1190], [2150, 1390], [2250, 1550], [2350, 1700], [2450, 1870], [2550, 2000]],
       2500: [[2000, 1460], [2150, 1710], [2250, 1910], [2350, 2150], [2450, 2350], [2550, 2500]],
+      3000: [[2000, 1740], [2150, 2060], [2250, 2300], [2350, 2550], [2450, 2800], [2550, 3000]],
       3500: [[2000, 2010], [2150, 2400], [2250, 2700], [2350, 3000], [2450, 3280], [2550, 3500]],
       4000: [[2000, 2310], [2150, 2750], [2250, 3090], [2350, 3400], [2450, 3750], [2550, 4000]],
     };
 
     const toPanel3 = {
-      600:  [[-15, 480],  [-10, 522],  [-5, 546],  [0, 600],  [5, 720]],
-      1000: [[-15, 800],  [-10, 870],  [-5, 910],  [0, 1000], [5, 1200]],
-      1500: [[-15, 1200], [-10, 1300], [-5, 1400], [0, 1500], [5, 1800]],
-      2000: [[-15, 1650], [-10, 1790], [-5, 1900], [0, 2000], [5, 2400]],
-      3000: [[-15, 2500], [-10, 2690], [-5, 2810], [0, 3000], [5, 3560]],
+      500:  [[-15, 500],  [-10, 500],  [-5, 500],   [0, 500],  [5, 630]],
+      600:  [[-15, 480],  [-10, 522],  [-5, 546],   [0, 600],  [5, 720]],
+      1000: [[-15, 800],  [-10, 870],  [-5, 910],   [0, 1000], [5, 1200]],
+      1500: [[-15, 1200], [-10, 1300], [-5, 1400],  [0, 1500], [5, 1800]],
+      2000: [[-15, 1650], [-10, 1790], [-5, 1900],  [0, 2000], [5, 2400]],
+      2500: [[-15, 2080], [-10, 2200], [-5, 2350],  [0, 2500], [5, 2970]],
+      3000: [[-15, 2500], [-10, 2690], [-5, 2810],  [0, 3000], [5, 3560]],
+      3500: [[-15, 2900], [-10, 3100], [-5, 3300],  [0, 3500], [5, 4150]],
+      4000: [[-15, 3350], [-10, 3560], [-5, 3790],  [0, 4000], [3, 4500], [5, 4500]],
+      4500: [[-15, 3790], [-10, 4000], [-5, 4250],  [0, 4500], [5, 4500]],
     };
 
     // FIG 5-9: FLAPS 25° OVER 50FT BARRIER — Panel 1
     const toPanel1 = {
-      "SL":   [[0, 1400],   [10, 1510],  [30, 1850]],
-      "2000": [[-4, 1550],  [10, 1800],  [30, 2200]],
-      "4000": [[-5, 1800],  [10, 2150],  [30, 2600]],
-      "6000": [[-10, 2100], [10, 2580],  [30, 3100]],
-      "8000": [[-10, 2500], [10, 3100],  [30, 3700]],
+      "SL":   [[0, 1400],     [10, 1510],  [30, 1850],  [40, 2040],  [50, 2210]],
+      "2000": [[-4, 1560],    [10, 1800],  [30, 2200],  [46, 2550]],
+      "4000": [[-7.6, 1790],  [10, 2150],  [20, 2380],  [30, 2600],  [42, 2910]],
+      "6000": [[-2, 2040],    [0, 2310],   [10, 2580],  [30, 3100],  [38, 3360]],
+      "8000": [[-16, 2320],   [0, 2780],   [10, 3100],  [20, 3400],  [30, 3700],  [34, 3880]],
     };
 
     // FIG 5-13: FLAPS 25° GROUND ROLL — Panel 1
     const grPanel1 = {
-      "SL":   [[0, 990],   [25, 1250],  [50, 1580]],
-      "2000": [[-4, 1100], [20, 1425],  [46, 1800]],
-      "4000": [[-8, 1260], [20, 1700],  [42, 2100]],
-      "6000": [[-11,1450], [20, 2040],  [38, 2410]],
-      "8000": [[-15,1660], [10, 2200],  [34, 2800]],
+      "SL":   [[0, 990],   [10, 1070], [25, 1250],  [50, 1580]],
+      "2000": [[-4, 1100], [10, 1280], [20, 1425],  [46, 1800]],
+      "4000": [[-8, 1260], [5, 1455],  [20, 1700],  [42, 2100]],
+      "6000": [[-11,1450], [5, 1745],  [20, 2040],  [38, 2410]],
+      "8000": [[-15,1660], [-3, 1925], [10, 2200],  [34, 2800]],
     };
 
     // FIG 5-13: FLAPS 25° GROUND ROLL — Panel 2
     const grPanel2 = {
-      1000: [[2000,600],  [2100,600],  [2150,640],  [2250,700],  [2350,780],  [2450,880],  [2550,1000]],
+      600:  [[2000,600],  [2150,600],  [2250,600],  [2350,600],  [2450,600],  [2550,600]],
+      800:  [[2000,600],  [2150,600],  [2250,600],  [2350,625],  [2450,700],  [2550,800]],
+      1000: [[2000,600],  [2150,630],  [2250,700],  [2350,780],  [2450,875],  [2550,1000]],
+      1200: [[2000,600],  [2150,760],  [2250,850],  [2350,945],  [2450,1050], [2550,1200]],
       1400: [[2000,750],  [2100,850],  [2150,890],  [2250,990],  [2350,1100], [2450,1230], [2550,1400]],
       1800: [[2000,950],  [2100,1090], [2150,1150], [2250,1260], [2350,1400], [2450,1580], [2550,1800]],
       2200: [[2000,1060], [2100,1200], [2150,1270], [2250,1400], [2350,1560], [2450,1750], [2550,2200]],
@@ -664,12 +696,14 @@
 
     // FIG 5-13: FLAPS 25° GROUND ROLL — Panel 3 (tailwind N/A above 2400ft ref)
     const grPanel3 = {
-      800:  [[-15,640],  [-10,700],  [-5,750],  [0,800],  [5,990]],
-      1200: [[-15,950],  [-10,1040], [-5,1110], [0,1200], [5,1460]],
-      1600: [[-15,1250], [-10,1370], [-5,1490], [0,1600], [5,1970]],
-      2000: [[-15,1580], [-10,1725], [-5,1850], [0,2000], [5,2450]],
-      2400: [[-15,1900], [-10,2050], [-5,2225], [0,2400], [5,2980]],
-      2800: [[-15,2200], [-10,2400], [-5,2600], [0,2800], [5,2800]],
+      600:  [[-15,600],  [-10,600],  [-5,600],  [0,600],   [5,750]],
+      800:  [[-15,640],  [-10,700], [-5,750],  [0,800],   [5,990]],
+      1000: [[-15,800],  [-10,855],  [-5,930],  [0,1000],  [5,1230]],
+      1200: [[-15,950],  [-10,1040],[-5,1110], [0,1200],  [5,1460]],
+      1600: [[-15,1250], [-10,1370],[-5,1490], [0,1600],  [5,1970]],
+      2000: [[-15,1580], [-10,1725],[-5,1850], [0,2000],  [5,2450]],
+      2400: [[-15,1900], [-10,2050],[-5,2225], [0,2400],  [5,2980]],
+      2800: [[-15,2200], [-10,2400],[-5,2600], [0,2800],  [5,2800]],
     };
 
     function toInterpList(list, x) {
@@ -711,6 +745,27 @@
       return toInterpList(p1data["8000"], oat);
     }
 
+    // Takeoff speeds from POH table
+    const TO_SPEEDS = [
+      { wt: 2250, liftoff: 50, barrier: 54 },
+      { wt: 2350, liftoff: 53, barrier: 56 },
+      { wt: 2450, liftoff: 55, barrier: 58 },
+      { wt: 2550, liftoff: 55, barrier: 60 },
+    ];
+    function getTakeoffSpeeds(weightLbs) {
+      const w = Math.max(2250, Math.min(2550, weightLbs));
+      for (let i = 0; i < TO_SPEEDS.length - 1; i++) {
+        if (w >= TO_SPEEDS[i].wt && w <= TO_SPEEDS[i+1].wt) {
+          const t = (w - TO_SPEEDS[i].wt) / (TO_SPEEDS[i+1].wt - TO_SPEEDS[i].wt);
+          return {
+            liftoff: Math.round(TO_SPEEDS[i].liftoff + t * (TO_SPEEDS[i+1].liftoff - TO_SPEEDS[i].liftoff)),
+            barrier: Math.round(TO_SPEEDS[i].barrier + t * (TO_SPEEDS[i+1].barrier - TO_SPEEDS[i].barrier)),
+          };
+        }
+      }
+      return { liftoff: TO_SPEEDS[TO_SPEEDS.length-1].liftoff, barrier: TO_SPEEDS[TO_SPEEDS.length-1].barrier };
+    }
+
     function calculateTakeoff(altFt, oatC, weightLbs, windKt, windDir, chartType) {
       const windVal = windDir === "tail" ? windKt : -windKt;
 
@@ -737,18 +792,22 @@
       };
     }
 
-    function TakeoffTab() {
-      const [alt, setAlt] = useState("");
-      const [oat, setOat] = useState("");
-      const [tempUnit, setTempUnit] = useState("C");
-      const [weight, setWeight] = useState("");
-      const [wind, setWind] = useState("");
-      const [windDir, setWindDir] = useState("head");
-      const [runway, setRunway] = useState("");
-      const [windHeading, setWindHeading] = useState("");
-      const [windSpeed, setWindSpeed] = useState("");
-      const [result, setResult] = useState(null);
+    function TakeoffTab({ savedState, onStateChange }) {
+      const [alt, setAlt] = useState(savedState.alt || "");
+      const [oat, setOat] = useState(savedState.oat || "");
+      const [tempUnit, setTempUnit] = useState(savedState.tempUnit || "C");
+      const [weight, setWeight] = useState(savedState.weight || "");
+      const [wind, setWind] = useState(savedState.wind || "");
+      const [windDir, setWindDir] = useState(savedState.windDir || "head");
+      const [runway, setRunway] = useState(savedState.runway || "");
+      const [windHeading, setWindHeading] = useState(savedState.windHeading || "");
+      const [windSpeed, setWindSpeed] = useState(savedState.windSpeed || "");
+      const [result, setResult] = useState(savedState.result || null);
       const [error, setError] = useState("");
+
+      useEffect(() => {
+        onStateChange({ alt, oat, tempUnit, weight, wind, windDir, runway, windHeading, windSpeed, result });
+      }, [alt, oat, tempUnit, weight, wind, windDir, runway, windHeading, windSpeed, result]);
 
       function getWindComponents(rwyNum, windHdg, windSpd) {
         const rwyHdg = (rwyNum * 10) % 360;
@@ -787,7 +846,7 @@
         const windWasClamped = windActual > windClamped;
 
         const res = calculateTakeoff(altVal, oatC, weightVal, windClamped, wDir, "50ft");
-        setResult({ ...res, windComponents: wc, windSpd, windActual, windClamped, windWasClamped, windDir: wDir, rwyNum });
+        setResult({ ...res, windComponents: wc, windSpd, windActual, windClamped, windWasClamped, windDir: wDir, rwyNum, weightLbs: weightVal, densityAlt: getDensityAlt(altVal, oatC) });
       }, [alt, oat, tempUnit, weight, runway, windHeading, windSpeed, windComponents, windSpd, rwyNum, windHdg]);
 
       return (
@@ -799,7 +858,7 @@
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "20px", marginBottom: "28px" }}>
             <InputField label="PRESSURE ALTITUDE" unit="FT" value={alt} onChange={setAlt} placeholder="e.g. 2000" hint="0 – 8,000 ft" />
-            <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} />
+            <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} hint="−10°C to 50°C chart range" />
             <InputField label="GROSS WEIGHT" unit="LBS" value={weight} onChange={setWeight} placeholder="e.g. 2400" hint="2,000 – 2,550 lbs (leave blank for 2,550)" />
             <div>
               <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px" }}>WIND</div>
@@ -989,12 +1048,31 @@
             </div>
           )}
 
+          {/* Density altitude */}
+          {(() => {
+            const da = result.densityAlt;
+            const daColor = da > 5000 ? C.error : da > 3000 ? C.warm : C.green;
+            const daLabel = da > 5000 ? "HIGH DA — PERFORMANCE SIGNIFICANTLY DEGRADED" : da > 3000 ? "ELEVATED DA — EXPECT REDUCED PERFORMANCE" : "NORMAL DA";
+            return (
+              <div style={{ background: C.input, border: `1px solid ${daColor}55`, borderRadius: "3px", padding: "10px 16px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.dim, marginBottom: "2px" }}>DENSITY ALTITUDE</div>
+                  <div style={{ fontSize: "11px", letterSpacing: "1px", color: daColor }}>{daLabel}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <span style={{ fontSize: "32px", fontWeight: "bold", color: daColor }}>{da.toLocaleString()}</span>
+                  <span style={{ fontSize: "13px", color: C.dim, marginLeft: "6px" }}>FT</span>
+                </div>
+              </div>
+            );
+          })()}
+
           <div style={{ background: "#060a0f", border: `1px solid ${C.border}`, borderRadius: "4px", padding: "14px 14px 10px", marginBottom: "14px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
               <div style={{ fontSize: "15px", letterSpacing: "3px", color: C.green }}>FLAPS 25° TAKEOFF</div>
               <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.dimmer }}>FULL THROTTLE · PAVED/LEVEL/DRY · A/C OFF</div>
             </div>
-            <svg viewBox="0 0 460 150" style={{ width: "100%", display: "block" }}>
+            <svg viewBox="0 0 460 165" style={{ width: "100%", display: "block" }}>
               <defs>
                 <linearGradient id="rwyGrad" x1="0" y1="0" x2="1" y2="0">
                   <stop offset="0%" stopColor="#1e2818" />
@@ -1003,7 +1081,7 @@
               </defs>
 
               {/* Ground */}
-              <rect x="0" y="112" width="460" height="38" fill="#080c06" />
+              <rect x="0" y="112" width="460" height="53" fill="#080c06" />
 
               {/* Runway */}
               <rect x="18" y="84" width="424" height="30" rx="2" fill="url(#rwyGrad)" stroke="#2a3a1a" strokeWidth="1" />
@@ -1025,25 +1103,43 @@
                 strokeDasharray="5,3" opacity={done ? 0.5 : 0.15}
               />
 
-              {/* Ground roll / liftoff marker */}
-              <line x1={xGr} y1="78" x2={xGr} y2="116" stroke={markerColorRoll} strokeWidth="1.5" strokeDasharray="3,2" />
-              <LabelBox cx={xGr} cy={74} text={`${distGr} FT · LIFTOFF`} color={markerColorRoll} />
+              {/* Ground roll marker */}
+              <line x1={xGr} y1="84" x2={xGr} y2="116" stroke={markerColorRoll} strokeWidth="1.5" strokeDasharray="3,2" />
               <circle cx={xGr} cy={yRwy} r="2.5" fill={markerColorRoll} />
 
-              {/* 50ft obstacle pole + flag — top at y=62, climb arc passes ~y=30 */}
+              {/* 50ft obstacle pole + flag */}
               <line x1={x50} y1="62" x2={x50} y2="116" stroke={markerColor50} strokeWidth="2" />
               <rect x={x50 + 2} y="62" width="17" height="11" rx="1.5" fill={markerColor50} />
               <text x={x50 + 10.5} y="71" textAnchor="middle" fill="#0a0e1a" fontSize="11" fontFamily="Courier New" fontWeight="bold">50</text>
 
-              {/* 50ft distance label below runway */}
+              {/* Ground roll bracket ABOVE runway */}
               {(() => {
-                const label = `${dist50} FT`;
-                const charW = 6.6, padX = 7, h = 15;
-                const w = label.length * charW + padX * 2;
+                const label = `${distGr} FT · GROUND ROLL`;
+                const textW = label.length * 6.6, padX = 7, boxW = textW + padX * 2;
+                const cx = (18 + xGr) / 2;
                 return (
                   <>
-                    <rect x={x50 - w/2} y="128" width={w} height={h} rx="2" fill="#060a0f" stroke={markerColor50} strokeWidth="0.8" />
-                    <text x={x50} y="139" textAnchor="middle" fill={markerColor50} fontSize="11" fontFamily="Courier New">{label}</text>
+                    <line x1="18" y1="75" x2={xGr} y2="75" stroke={markerColorRoll} strokeWidth="1" opacity="0.7" />
+                    <line x1="18" y1="72" x2="18" y2="78" stroke={markerColorRoll} strokeWidth="1" />
+                    <line x1={xGr} y1="72" x2={xGr} y2="78" stroke={markerColorRoll} strokeWidth="1" />
+                    <rect x={cx - boxW/2} y="61" width={boxW} height="15" rx="2" fill="#060a0f" stroke={markerColorRoll} strokeWidth="0.8" />
+                    <text x={cx} y="72" textAnchor="middle" fill={markerColorRoll} fontSize="11" fontFamily="Courier New">{label}</text>
+                  </>
+                );
+              })()}
+
+              {/* 50ft distance bracket BELOW runway */}
+              {(() => {
+                const label = `${dist50} FT · OVER 50 FT`;
+                const textW = label.length * 6.6, padX = 7, boxW = textW + padX * 2;
+                const cx = (18 + x50) / 2;
+                return (
+                  <>
+                    <line x1="18" y1="122" x2={x50} y2="122" stroke={markerColor50} strokeWidth="1" opacity="0.7" />
+                    <line x1="18" y1="119" x2="18" y2="125" stroke={markerColor50} strokeWidth="1" />
+                    <line x1={x50} y1="119" x2={x50} y2="125" stroke={markerColor50} strokeWidth="1" />
+                    <rect x={cx - boxW/2} y="127" width={boxW} height="15" rx="2" fill="#060a0f" stroke={markerColor50} strokeWidth="0.8" />
+                    <text x={cx} y="138" textAnchor="middle" fill={markerColor50} fontSize="11" fontFamily="Courier New">{label}</text>
                   </>
                 );
               })()}
@@ -1053,12 +1149,12 @@
                 <text x="36" y="102" textAnchor="middle" fill="#4a6a3a" fontSize="11" fontFamily="Courier New" fontWeight="bold" letterSpacing="1">{String(result.rwyNum).padStart(2,'0')}</text>
               )}
 
-              {/* Wind arrow */}
+              {/* Wind arrow — top LEFT to avoid plane overlap */}
               {result.windComponents && (() => {
                 const wc = result.windComponents;
                 const svgDeg = (180 + wc.angle) % 360;
                 const rad = svgDeg * Math.PI / 180;
-                const cx = 420, cy = 35, len = 28;
+                const cx = 230, cy = 35, len = 28;
                 const dx = Math.cos(rad) * len, dy = Math.sin(rad) * len;
                 const x1 = cx - dx*0.5, y1 = cy - dy*0.5;
                 const x2 = cx + dx*0.5, y2 = cy + dy*0.5;
@@ -1117,6 +1213,24 @@
               </div>
             ))}
           </Grid2>
+
+          {/* Takeoff speeds */}
+          {(() => {
+            const speeds = getTakeoffSpeeds(result.weightLbs || 2550);
+            return (
+              <div style={{ background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "12px 16px", marginBottom: "12px", display: "flex", justifyContent: "space-around", alignItems: "center" }}>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>LIFTOFF</div>
+                  <div style={{ fontSize: "28px", fontWeight: "bold", color: markerColorRoll }}>{speeds.liftoff}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>KIAS</span></div>
+                </div>
+                <div style={{ width: "1px", height: "40px", background: C.borderDim }} />
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>50 FT BARRIER</div>
+                  <div style={{ fontSize: "28px", fontWeight: "bold", color: markerColor50 }}>{speeds.barrier}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>KIAS</span></div>
+                </div>
+              </div>
+            );
+          })()}
 
           <NoteBox text="Flaps 25°, full throttle, paved/level/dry, A/C off. Always verify against official POH charts." />
         </div>
@@ -1347,16 +1461,20 @@
       return Math.round(gr3Interp(p3Lo) + p3Frac * (gr3Interp(p3Hi) - gr3Interp(p3Lo)));
     }
 
-    function LandingTab() {
-      const [alt, setAlt] = useState("");
-      const [oat, setOat] = useState("");
-      const [tempUnit, setTempUnit] = useState("C");
-      const [weight, setWeight] = useState("");
-      const [runway, setRunway] = useState("");
-      const [windHeading, setWindHeading] = useState("");
-      const [windSpeed, setWindSpeed] = useState("");
-      const [result, setResult] = useState(null);
+    function LandingTab({ savedState, onStateChange }) {
+      const [alt, setAlt] = useState(savedState.alt || "");
+      const [oat, setOat] = useState(savedState.oat || "");
+      const [tempUnit, setTempUnit] = useState(savedState.tempUnit || "C");
+      const [weight, setWeight] = useState(savedState.weight || "");
+      const [runway, setRunway] = useState(savedState.runway || "");
+      const [windHeading, setWindHeading] = useState(savedState.windHeading || "");
+      const [windSpeed, setWindSpeed] = useState(savedState.windSpeed || "");
+      const [result, setResult] = useState(savedState.result || null);
       const [error, setError] = useState("");
+
+      useEffect(() => {
+        onStateChange({ alt, oat, tempUnit, weight, runway, windHeading, windSpeed, result });
+      }, [alt, oat, tempUnit, weight, runway, windHeading, windSpeed, result]);
 
       function getWindComponents(rwyNum, windHdg, windSpd) {
         const rwyHdg = (rwyNum * 10) % 360;
@@ -1417,7 +1535,7 @@
 
           <div style={{ display: "flex", flexDirection: "column", gap: "20px", marginBottom: "28px" }}>
             <InputField label="PRESSURE ALTITUDE" unit="FT" value={alt} onChange={setAlt} placeholder="e.g. 2500" hint="0 – 7,000 ft" />
-            <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} />
+            <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} hint="−10°C to 50°C chart range" />
             <InputField label="GROSS WEIGHT" unit="LBS" value={weight} onChange={setWeight} placeholder="e.g. 2400" hint="2,000 – 2,550 lbs (leave blank for 2,550)" />
             <div>
               <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px" }}>WIND</div>
@@ -1747,11 +1865,15 @@
     // ============================================================
     const GLIDE_NM_PER_FT = 19 / 10000;
 
-    function GlideTab() {
-      const [cruiseAlt, setCruiseAlt] = useState("");
-      const [terrainAlt, setTerrainAlt] = useState("");
-      const [result, setResult] = useState(null);
+    function GlideTab({ savedState, onStateChange }) {
+      const [cruiseAlt, setCruiseAlt] = useState(savedState.cruiseAlt || "");
+      const [terrainAlt, setTerrainAlt] = useState(savedState.terrainAlt || "");
+      const [result, setResult] = useState(savedState.result || null);
       const [error, setError] = useState("");
+
+      useEffect(() => {
+        onStateChange({ cruiseAlt, terrainAlt, result });
+      }, [cruiseAlt, terrainAlt, result]);
 
       const handleCalculate = useCallback(() => {
         setError(""); setResult(null);
@@ -1857,7 +1979,13 @@
 
     function App() {
       const [activeTab, setActiveTab] = useState("takeoff");
+      const [tabStates, setTabStates] = useState({});
       const mobile = useIsMobile();
+
+      function saveTabState(tabId, state) {
+        setTabStates(prev => ({ ...prev, [tabId]: state }));
+      }
+
       const tabs = [
         { id: "takeoff",  label: "TAKEOFF",       fig: "5-9·5-13"  },
         { id: "roc",      label: "CLIMB",          fig: "5-15" },
@@ -1866,6 +1994,7 @@
         { id: "glide",    label: "GLIDE",          fig: "5-39" },
         { id: "landing",  label: "LANDING",        fig: "5-41·5-43" },
       ];
+      const tabProps = (id) => ({ savedState: tabStates[id] || {}, onStateChange: (s) => saveTabState(id, s) });
       return (
         <MobileContext.Provider value={mobile}>
         <div style={{ minHeight: "100vh", background: C.bg, fontFamily: mono, color: C.text, display: "flex", flexDirection: "column", alignItems: "center", padding: mobile ? "16px 12px" : "32px 24px" }}>
@@ -1873,7 +2002,6 @@
             <div style={{ fontSize: mobile ? "11px" : "18px", letterSpacing: mobile ? "3px" : "6px", color: C.green, marginBottom: "6px" }}>PA-28-181 ARCHER III · POH PERFORMANCE</div>
             <div style={{ fontSize: mobile ? "22px" : "36px", fontWeight: "bold", letterSpacing: mobile ? "1px" : "3px", textTransform: "uppercase" }}>PERFORMANCE CALCULATOR</div>
           </div>
-          {/* Tab bar — 2 rows of 3 on mobile, single row on desktop */}
           <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr 1fr" : "repeat(6, 1fr)", marginBottom: mobile ? "14px" : "24px", border: `1px solid ${C.border}`, borderRadius: "4px", overflow: "hidden", width: "100%", maxWidth: "860px" }}>
             {tabs.map((tab, i) => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
@@ -1892,7 +2020,12 @@
             ))}
           </div>
           <div style={{ width: "100%", maxWidth: "860px" }}>
-            {activeTab === "takeoff" ? <TakeoffTab /> : activeTab === "landing" ? <LandingTab /> : activeTab === "roc" ? <RateOfClimbTab /> : activeTab === "tfd" ? <TimeFuelDistTab /> : activeTab === "cruise" ? <CruiseTab /> : activeTab === "glide" ? <GlideTab /> : null}
+            {activeTab === "takeoff"  ? <TakeoffTab       {...tabProps("takeoff")}  /> :
+             activeTab === "landing"  ? <LandingTab       {...tabProps("landing")}  /> :
+             activeTab === "roc"      ? <RateOfClimbTab   {...tabProps("roc")}      /> :
+             activeTab === "tfd"      ? <TimeFuelDistTab  {...tabProps("tfd")}      /> :
+             activeTab === "cruise"   ? <CruiseTab        {...tabProps("cruise")}   /> :
+             activeTab === "glide"    ? <GlideTab         {...tabProps("glide")}    /> : null}
           </div>
           <div style={{ marginTop: "24px", fontSize: "12px", color: "#2a3a1a", letterSpacing: "2px" }}>PA-28-181 ARCHER III · VB-2749 · ISSUED DEC 2017</div>
         </div>
