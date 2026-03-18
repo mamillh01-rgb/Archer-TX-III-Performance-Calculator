@@ -941,6 +941,64 @@
       };
     }
 
+    function MetarFetch({ onFill }) {
+      const [icao, setIcao] = useState("");
+      const [status, setStatus] = useState(null);
+      const [metar, setMetar] = useState(null);
+      const [msg, setMsg] = useState("");
+
+      async function fetchMetar() {
+        const id = icao.trim().toUpperCase();
+        if (!id || id.length < 3) { setMsg("Enter a valid airport identifier."); setStatus("error"); return; }
+        setStatus("loading"); setMetar(null); setMsg("");
+        try {
+          const url = "https://metar-proxy.mamillh01.workers.dev/?id=" + id;
+          const res = await fetch(url);
+          if (!res.ok) throw new Error("failed");
+          const data = await res.json();
+          if (!data || data.length === 0) { setMsg("No METAR found for " + id + "."); setStatus("error"); return; }
+          const m = data[0];
+          const wd = (m.wdir !== undefined && m.wdir !== null) ? parseInt(m.wdir) : null;
+          const ws = (m.wspd !== undefined && m.wspd !== null) ? parseInt(m.wspd) : null;
+          const tp = (m.temp !== undefined && m.temp !== null) ? parseFloat(m.temp) : null;
+          const raw = m.rawOb || m.rawObservation || "";
+          setMetar({ wd, ws, tp, raw });
+          setStatus("ok");
+          onFill({ windDir: wd, windSpeed: ws, oat: tp });
+        } catch(e) {
+          setMsg("Failed to fetch METAR. Check connection or try 4-letter ICAO (e.g. KLAF).");
+          setStatus("error");
+        }
+      }
+
+      return (
+        <div style={{ background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "12px 14px" }}>
+          <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "10px" }}>METAR AUTO-FILL</div>
+          <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+            <input value={icao} onChange={e => setIcao(e.target.value.toUpperCase().slice(0,4))}
+              onKeyDown={e => { if (e.key === "Enter") fetchMetar(); }}
+              placeholder="KLAF"
+              style={{ flex:1, background:C.bg, border:`1px solid ${C.border}`, borderRadius:"3px", padding:"10px 12px", color:C.text, fontFamily:mono, fontSize:"18px", letterSpacing:"3px" }} />
+            <button onClick={fetchMetar} style={{ background:C.green, border:"none", borderRadius:"3px", padding:"10px 18px", color:"#0a0e1a", fontFamily:mono, fontSize:"12px", letterSpacing:"2px", cursor:"pointer", fontWeight:"bold" }}>
+              {status === "loading" ? "..." : "FETCH"}
+            </button>
+          </div>
+          {msg && <div style={{ fontSize:"12px", color:C.error, letterSpacing:"1px" }}>{msg}</div>}
+          {metar && status === "ok" && (
+            <div>
+              <div style={{ fontSize:"10px", color:C.dimmest, letterSpacing:"1px", marginBottom:"6px", wordBreak:"break-all" }}>{metar.raw}</div>
+              <div style={{ display:"flex", gap:"12px", flexWrap:"wrap" }}>
+                {metar.wd !== null && <div style={{ fontSize:"11px", color:C.note }}>WIND <span style={{color:C.text}}>{metar.wd}°</span></div>}
+                {metar.ws !== null && <div style={{ fontSize:"11px", color:C.note }}>SPEED <span style={{color:C.text}}>{metar.ws}kt</span></div>}
+                {metar.tp !== null && <div style={{ fontSize:"11px", color:C.note }}>TEMP <span style={{color:C.text}}>{metar.tp}°C</span></div>}
+                <div style={{ fontSize:"11px", color:C.green }}>✓ FILLED</div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     function TakeoffTab({ savedState, onStateChange }) {
       const [alt, setAlt] = useState(savedState.alt || "");
       const [oat, setOat] = useState(savedState.oat || "");
@@ -1009,6 +1067,11 @@
             <InputField label="PRESSURE ALTITUDE" unit="FT" value={alt} onChange={setAlt} placeholder="e.g. 2000" hint="0 – 8,000 ft" />
             <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} hint="−10°C to 50°C chart range" />
             <InputField label="GROSS WEIGHT" unit="LBS" value={weight} onChange={setWeight} placeholder="e.g. 2400" hint="2,000 – 2,550 lbs (leave blank for 2,550)" />
+            <MetarFetch onFill={({ windDir: wd, windSpeed: ws, oat: o }) => {
+              if (wd !== null) setWindHeading(String(wd));
+              if (ws !== null) setWindSpeed(String(ws));
+              if (o  !== null) { setOat(String(o)); setTempUnit("C"); }
+            }} />
             <div>
               <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px" }}>WIND</div>
               <Grid3 style={{ marginBottom: "8px" }}>
@@ -1688,6 +1751,11 @@
             <InputField label="PRESSURE ALTITUDE" unit="FT" value={alt} onChange={setAlt} placeholder="e.g. 2500" hint="0 – 7,000 ft" />
             <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} hint="−10°C to 50°C chart range" />
             <InputField label="GROSS WEIGHT" unit="LBS" value={weight} onChange={setWeight} placeholder="e.g. 2400" hint="2,000 – 2,550 lbs (leave blank for 2,550)" />
+            <MetarFetch onFill={({ windDir: wd, windSpeed: ws, oat: o }) => {
+              if (wd !== null) setWindHeading(String(wd));
+              if (ws !== null) setWindSpeed(String(ws));
+              if (o  !== null) { setOat(String(o)); setTempUnit("C"); }
+            }} />
             <div>
               <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px" }}>WIND</div>
               <Grid3 style={{ marginBottom: "8px" }}>
