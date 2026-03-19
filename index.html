@@ -440,13 +440,16 @@
       const mobile = React.useContext(MobileContext);
       return <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: "4px", padding: mobile ? "16px" : "32px", boxShadow: "0 0 80px rgba(90,138,106,0.10)" }}>{children}</div>;
     }
-    function TempField({ value, onChange, unit, onUnitChange, label = "OAT AT DEPARTURE", hint = "−25°C to 50°C chart range" }) {
+    function TempField({ value, onChange, unit, onUnitChange, label = "OAT AT DEPARTURE", hint = "−25°C to 50°C chart range", filled = false }) {
       return (
         <div>
-          <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green, marginBottom: "8px", textTransform: "uppercase" }}>{label}</div>
+          <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green, marginBottom: "8px", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "8px" }}>
+            {label}
+            {filled && <span style={{ fontSize: "11px", background: C.green, color: "#0a0e1a", borderRadius: "3px", padding: "2px 6px", letterSpacing: "1px", fontWeight: "bold" }}>✓ METAR</span>}
+          </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <input type="number" value={value} onChange={e => onChange(e.target.value)} placeholder="e.g. 23"
-              style={{ flex: 1, background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+              style={{ flex: 1, background: C.input, border: `1px solid ${filled ? C.green : C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
             {["C", "F"].map(u => (
               <button key={u} onClick={() => onUnitChange(u)} style={{
                 padding: "11px 15px", background: unit === u ? C.green : C.input,
@@ -459,13 +462,16 @@
         </div>
       );
     }
-    function InputField({ label, unit, value, onChange, placeholder, hint }) {
+    function InputField({ label, unit, value, onChange, placeholder, hint, filled = false }) {
       return (
         <div>
-          <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green, marginBottom: "8px", textTransform: "uppercase" }}>{label}</div>
+          <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green, marginBottom: "8px", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "8px" }}>
+            {label}
+            {filled && <span style={{ fontSize: "11px", background: C.green, color: "#0a0e1a", borderRadius: "3px", padding: "2px 6px", letterSpacing: "1px", fontWeight: "bold" }}>✓ METAR</span>}
+          </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <input type="number" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-              style={{ flex: 1, background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+              style={{ flex: 1, background: C.input, border: `1px solid ${filled ? C.green : C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
             <div style={{ padding: "11px 14px", background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", color: C.dim, fontSize: "15px", minWidth: "44px", textAlign: "center" }}>{unit}</div>
           </div>
           {hint && <div style={{ fontSize: "13px", color: C.dimmest, marginTop: "5px", letterSpacing: "1px" }}>{hint}</div>}
@@ -1004,10 +1010,13 @@
           const clouds = m.clouds || null;
           const altim = m.altim !== undefined && m.altim !== null ? parseFloat(m.altim) : null;
           const altimInHg = altim !== null ? altim * 0.02953 : null;
+          // obsTime is Unix timestamp in seconds
+          const obsTime = m.obsTime ? new Date(m.obsTime * 1000) : null;
+          const ageMin = obsTime ? Math.round((Date.now() - obsTime.getTime()) / 60000) : null;
           const pressureAlt = (altimInHg !== null && elevFt !== null)
             ? Math.round(elevFt + (29.92 - altimInHg) * 1000) : null;
           const fc = getFlightCategory(raw, vis, clouds);
-          setMetar({ wd, ws, tp, raw, vis, fc, altimInHg, elevFt, pressureAlt });
+          setMetar({ wd, ws, tp, raw, vis, fc, altimInHg, elevFt, pressureAlt, ageMin });
           setStatus("ok");
           onFill({ windDir: wd, windSpeed: ws, oat: tp, pressureAlt });
         } catch(e) {
@@ -1034,17 +1043,20 @@
           {metar && status === "ok" && (
             <div>
               <div style={{ fontSize:"10px", color:C.dimmest, letterSpacing:"1px", marginBottom:"8px", wordBreak:"break-all", lineHeight:"1.4" }}>{metar.raw}</div>
+              {metar.ageMin !== null && metar.ageMin > 60 && (
+                <div style={{ background:"#1a1200", border:`1px solid ${C.warm}`, borderRadius:"3px", padding:"6px 10px", marginBottom:"8px", fontSize:"11px", color:C.warm, letterSpacing:"1px" }}>
+                  ⚠ METAR is {metar.ageMin} min old — may not reflect current conditions
+                </div>
+              )}
+              {metar.ageMin !== null && metar.ageMin <= 60 && (
+                <div style={{ fontSize:"10px", color:C.dimmest, letterSpacing:"1px", marginBottom:"6px" }}>Observed {metar.ageMin} min ago</div>
+              )}
               <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", alignItems:"center" }}>
-                {/* Flight category badge */}
                 <div style={{ background:metar.fc.color, borderRadius:"3px", padding:"3px 10px", fontSize:"13px", fontWeight:"bold", color:"#0a0e1a", letterSpacing:"2px" }}>{metar.fc.cat}</div>
-                {metar.wd !== null && <div style={{ fontSize:"11px", color:C.note }}>WIND <span style={{color:C.text}}>{metar.wd}°</span></div>}
-                {metar.ws !== null && <div style={{ fontSize:"11px", color:C.note }}>SPEED <span style={{color:C.text}}>{metar.ws}kt</span></div>}
-                {metar.tp !== null && <div style={{ fontSize:"11px", color:C.note }}>TEMP <span style={{color:C.text}}>{metar.tp}°C</span></div>}
                 {metar.vis !== null && <div style={{ fontSize:"11px", color:C.note }}>VIS <span style={{color:C.text}}>{metar.vis}sm</span></div>}
                 {metar.altimInHg !== null && metar.altimInHg !== undefined && <div style={{ fontSize:"11px", color:C.note }}>ALTIM <span style={{color:C.text}}>{metar.altimInHg.toFixed(2)}"</span></div>}
                 {metar.elevFt !== null && metar.elevFt !== undefined && <div style={{ fontSize:"11px", color:C.note }}>FIELD ELEV <span style={{color:C.text}}>{metar.elevFt}ft</span></div>}
                 {metar.pressureAlt !== null && <div style={{ fontSize:"11px", color:C.note }}>PRESS ALT <span style={{color:C.green, fontWeight:"bold"}}>{metar.pressureAlt.toLocaleString()}ft</span></div>}
-                <div style={{ fontSize:"11px", color:C.green }}>✓ FILLED</div>
               </div>
             </div>
           )}
@@ -1058,6 +1070,7 @@
       const [tempUnit, setTempUnit] = useState(savedState.tempUnit || "C");
       const [weight, setWeight] = useState(savedState.weight || "");
       const [wind, setWind] = useState(savedState.wind || "");
+      const [metarFilled, setMetarFilled] = useState([]);
       const [windDir, setWindDir] = useState(savedState.windDir || "head");
       const [runway, setRunway] = useState(savedState.runway || "");
       const [windHeading, setWindHeading] = useState(savedState.windHeading || "");
@@ -1117,17 +1130,19 @@
             <div style={{ fontSize: "15px", color: C.dimmer, marginTop: "6px", letterSpacing: "1px" }}>FULL THROTTLE · PAVED/LEVEL/DRY · A/C OFF · FIG 5-9 · FIG 5-13</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "20px", marginBottom: "28px" }}>
-            <InputField label="PRESSURE ALTITUDE" unit="FT" value={alt} onChange={setAlt} placeholder="e.g. 2000" hint="0 – 8,000 ft" />
-            <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} hint="−10°C to 50°C chart range" />
+            <InputField label="PRESSURE ALTITUDE" unit="FT" value={alt} onChange={setAlt} placeholder="e.g. 2000" hint="0 – 8,000 ft" filled={metarFilled.includes("alt")} />
+            <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} hint="−10°C to 50°C chart range" filled={metarFilled.includes("oat")} />
             <InputField label="GROSS WEIGHT" unit="LBS" value={weight} onChange={setWeight} placeholder="e.g. 2400" hint="2,000 – 2,550 lbs (leave blank for 2,550)" />
             <MetarFetch onFill={({ windDir: wd, windSpeed: ws, oat: o, pressureAlt: pa }) => {
-              if (wd !== null) setWindHeading(String(wd));
-              if (ws !== null) setWindSpeed(String(ws));
-              if (o  !== null) { setOat(String(o)); setTempUnit("C"); }
-              if (pa !== null && pa !== undefined) setAlt(String(pa));
+              const filled = [];
+              if (wd !== null) { setWindHeading(String(wd)); filled.push("wind"); }
+              if (ws !== null) { setWindSpeed(String(ws)); filled.push("wind"); }
+              if (o  !== null) { setOat(String(o)); setTempUnit("C"); filled.push("oat"); }
+              if (pa !== null && pa !== undefined) { setAlt(String(pa)); filled.push("alt"); }
+              setMetarFilled(filled);
             }} />
             <div>
-              <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px" }}>WIND</div>
+              <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px", display:"flex", alignItems:"center", gap:"8px" }}>WIND{metarFilled.includes("wind") && <span style={{ fontSize:"11px", background:C.green, color:"#0a0e1a", borderRadius:"3px", padding:"2px 6px", letterSpacing:"1px", fontWeight:"bold" }}>✓ METAR</span>}</div>
               <Grid3 style={{ marginBottom: "8px" }}>
                 <div>
                   <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
@@ -1739,6 +1754,7 @@
       const [surface, setSurface] = useState(savedState.surface || "paved");
       const [result, setResult] = useState(savedState.result || null);
       const [error, setError] = useState("");
+      const [metarFilled, setMetarFilled] = useState([]);
 
       useEffect(() => {
         onStateChange({ alt, oat, tempUnit, weight, runway, windHeading, windSpeed, surface, result });
@@ -1802,17 +1818,19 @@
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "20px", marginBottom: "28px" }}>
-            <InputField label="PRESSURE ALTITUDE" unit="FT" value={alt} onChange={setAlt} placeholder="e.g. 2500" hint="0 – 7,000 ft" />
-            <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} hint="−10°C to 50°C chart range" />
+            <InputField label="PRESSURE ALTITUDE" unit="FT" value={alt} onChange={setAlt} placeholder="e.g. 2500" hint="0 – 7,000 ft" filled={metarFilled.includes("alt")} />
+            <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} hint="−10°C to 50°C chart range" filled={metarFilled.includes("oat")} />
             <InputField label="GROSS WEIGHT" unit="LBS" value={weight} onChange={setWeight} placeholder="e.g. 2400" hint="2,000 – 2,550 lbs (leave blank for 2,550)" />
             <MetarFetch onFill={({ windDir: wd, windSpeed: ws, oat: o, pressureAlt: pa }) => {
-              if (wd !== null) setWindHeading(String(wd));
-              if (ws !== null) setWindSpeed(String(ws));
-              if (o  !== null) { setOat(String(o)); setTempUnit("C"); }
-              if (pa !== null && pa !== undefined) setAlt(String(pa));
+              const filled = [];
+              if (wd !== null) { setWindHeading(String(wd)); filled.push("wind"); }
+              if (ws !== null) { setWindSpeed(String(ws)); filled.push("wind"); }
+              if (o  !== null) { setOat(String(o)); setTempUnit("C"); filled.push("oat"); }
+              if (pa !== null && pa !== undefined) { setAlt(String(pa)); filled.push("alt"); }
+              setMetarFilled(filled);
             }} />
             <div>
-              <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px" }}>WIND</div>
+              <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px", display:"flex", alignItems:"center", gap:"8px" }}>WIND{metarFilled.includes("wind") && <span style={{ fontSize:"11px", background:C.green, color:"#0a0e1a", borderRadius:"3px", padding:"2px 6px", letterSpacing:"1px", fontWeight:"bold" }}>✓ METAR</span>}</div>
               <Grid3 style={{ marginBottom: "8px" }}>
                 <div>
                   <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
@@ -3134,6 +3152,7 @@
       const [surface, setSurface] = useState(savedState.surface || "paved");
       const [result, setResult] = useState(savedState.result || null);
       const [error, setError] = useState("");
+      const [metarFilled, setMetarFilled] = useState([]);
 
       useEffect(() => {
         onStateChange({ alt, oat, tempUnit, weight, runway, windHeading, windSpeed, surface, result });
@@ -3190,17 +3209,19 @@
             <div style={{ fontSize: "13px", color: C.dimmer, marginTop: "6px", letterSpacing: "1px" }}>FLAPS 10° · FULL THROTTLE · PAVED/LEVEL/DRY · FIG 5-5</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "20px", marginBottom: "28px" }}>
-            <InputField label="PRESSURE ALTITUDE" unit="FT" value={alt} onChange={setAlt} placeholder="e.g. 2000" hint="0 – 8,000 ft" />
-            <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} hint="0°C to 40°C chart range" />
+            <InputField label="PRESSURE ALTITUDE" unit="FT" value={alt} onChange={setAlt} placeholder="e.g. 2000" hint="0 – 8,000 ft" filled={metarFilled.includes("alt")} />
+            <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} hint="0°C to 40°C chart range" filled={metarFilled.includes("oat")} />
             <InputField label="GROSS WEIGHT" unit="LBS" value={weight} onChange={setWeight} placeholder="e.g. 2400" hint="2,200 – 2,550 lbs (leave blank for 2,550)" />
             <MetarFetch onFill={({ windDir: wd, windSpeed: ws, oat: o, pressureAlt: pa }) => {
-              if (wd !== null) setWindHeading(String(wd));
-              if (ws !== null) setWindSpeed(String(ws));
-              if (o  !== null) { setOat(String(o)); setTempUnit("C"); }
-              if (pa !== null && pa !== undefined) setAlt(String(pa));
+              const filled = [];
+              if (wd !== null) { setWindHeading(String(wd)); filled.push("wind"); }
+              if (ws !== null) { setWindSpeed(String(ws)); filled.push("wind"); }
+              if (o  !== null) { setOat(String(o)); setTempUnit("C"); filled.push("oat"); }
+              if (pa !== null && pa !== undefined) { setAlt(String(pa)); filled.push("alt"); }
+              setMetarFilled(filled);
             }} />
             <div>
-              <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px" }}>WIND</div>
+              <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px", display:"flex", alignItems:"center", gap:"8px" }}>WIND{metarFilled.includes("wind") && <span style={{ fontSize:"11px", background:C.green, color:"#0a0e1a", borderRadius:"3px", padding:"2px 6px", letterSpacing:"1px", fontWeight:"bold" }}>✓ METAR</span>}</div>
               <Grid3 style={{ marginBottom: "8px" }}>
                 <div>
                   <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
@@ -3539,6 +3560,7 @@
       const [flaps, setFlaps] = useState(savedState.flaps || "full");
       const [result, setResult] = useState(savedState.result || null);
       const [error, setError] = useState("");
+      const [metarFilled, setMetarFilled] = useState([]);
 
       useEffect(() => {
         onStateChange({ alt, oat, tempUnit, runway, windHeading, windSpeed, surface, flaps, result });
@@ -3607,16 +3629,18 @@
             <div style={{ fontSize:"13px", color:C.dimmer, marginTop:"6px", letterSpacing:"1px" }}>FLAPS FULL · IDLE POWER · 2,550 LB · FIG 5-11</div>
           </div>
           <div style={{ display:"flex", flexDirection:"column", gap:"20px", marginBottom:"28px" }}>
-            <InputField label="PRESSURE ALTITUDE" unit="FT" value={alt} onChange={setAlt} placeholder="e.g. 2000" hint="0 – 8,000 ft" />
-            <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} hint="0°C to 40°C chart range" />
+            <InputField label="PRESSURE ALTITUDE" unit="FT" value={alt} onChange={setAlt} placeholder="e.g. 2000" hint="0 – 8,000 ft" filled={metarFilled.includes("alt")} />
+            <TempField label="OAT" value={oat} onChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} hint="0°C to 40°C chart range" filled={metarFilled.includes("oat")} />
             <MetarFetch onFill={({ windDir: wd, windSpeed: ws, oat: o, pressureAlt: pa }) => {
-              if (wd !== null) setWindHeading(String(wd));
-              if (ws !== null) setWindSpeed(String(ws));
-              if (o  !== null) { setOat(String(o)); setTempUnit("C"); }
-              if (pa !== null && pa !== undefined) setAlt(String(pa));
+              const filled = [];
+              if (wd !== null) { setWindHeading(String(wd)); filled.push("wind"); }
+              if (ws !== null) { setWindSpeed(String(ws)); filled.push("wind"); }
+              if (o  !== null) { setOat(String(o)); setTempUnit("C"); filled.push("oat"); }
+              if (pa !== null && pa !== undefined) { setAlt(String(pa)); filled.push("alt"); }
+              setMetarFilled(filled);
             }} />
             <div>
-              <div style={{ fontSize:"12px", letterSpacing:"3px", color:C.green, marginBottom:"8px" }}>WIND</div>
+              <div style={{ fontSize:"12px", letterSpacing:"3px", color:C.green, marginBottom:"8px", display:"flex", alignItems:"center", gap:"8px" }}>WIND{metarFilled.includes("wind") && <span style={{ fontSize:"11px", background:C.green, color:"#0a0e1a", borderRadius:"3px", padding:"2px 6px", letterSpacing:"1px", fontWeight:"bold" }}>✓ METAR</span>}</div>
               <Grid3 style={{ marginBottom:"8px" }}>
                 <div>
                   <div style={{ fontSize:"11px", color:C.dim, letterSpacing:"2px", marginBottom:"4px" }}>RUNWAY</div>
