@@ -38,6 +38,13 @@
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     input[type=number] { -moz-appearance: textfield; }
     input:focus { outline: 1px solid #5a8a6a !important; }
+    @keyframes dotPulse {
+      0%, 100% { opacity: 0.2; transform: scale(0.8); }
+      50% { opacity: 1; transform: scale(1.2); }
+    }
+    .dot1 { animation: dotPulse 1.2s ease-in-out infinite 0s; }
+    .dot2 { animation: dotPulse 1.2s ease-in-out infinite 0.4s; }
+    .dot3 { animation: dotPulse 1.2s ease-in-out infinite 0.8s; }
   </style>
   <script>
     // PWA: Register service worker and inject manifest
@@ -547,6 +554,7 @@
         </div>
       );
     }
+
     function ToggleRow({ label, options, value, onChange }) {
       const C = useC();
       return (
@@ -1078,26 +1086,31 @@
             if (runwayRes.ok) {
               const rwyData = await runwayRes.json();
               if (Array.isArray(rwyData) && rwyData.length > 0) {
-                runways = rwyData.map(r => ({ num: r, heading: parseInt(r.replace(/[LRC]/g,"")) * 10 }));
+                runways = rwyData.map(r => ({
+                  num: r.num,
+                  heading: parseInt(r.num.replace(/[LRC]/g,"")) * 10,
+                  length: r.length || null,
+                }));
               }
             }
           } catch(e) { /* fall through */ }
 
-          const wd  = (m.wdir !== undefined && m.wdir !== null) ? parseInt(m.wdir) : null;
-          const ws  = (m.wspd !== undefined && m.wspd !== null) ? parseInt(m.wspd) : null;
-          const tp  = (m.temp !== undefined && m.temp !== null) ? parseFloat(m.temp) : null;
           const raw = m.rawOb || m.rawObservation || "";
+          const isVRB = raw.toUpperCase().includes("VRB");
+          const wd  = (!isVRB && m.wdir !== undefined && m.wdir !== null) ? parseInt(m.wdir) : null;
+          const ws  = (!isVRB && m.wspd !== undefined && m.wspd !== null) ? parseInt(m.wspd) : null;
+          const tp  = (m.temp !== undefined && m.temp !== null) ? parseFloat(m.temp) : null;
           const vis = m.visib !== undefined ? m.visib : null;
           const clouds = m.clouds || null;
           const altim = m.altim !== undefined && m.altim !== null ? parseFloat(m.altim) : null;
-          const altimInHg = altim !== null ? altim * 0.02953 : null;
+          const altimInHg = altim !== null ? Math.round(altim * 0.02953 * 100) / 100 : null;
           // obsTime is Unix timestamp in seconds
           const obsTime = m.obsTime ? new Date(m.obsTime * 1000) : null;
           const ageMin = obsTime ? Math.round((Date.now() - obsTime.getTime()) / 60000) : null;
           const pressureAlt = (altimInHg !== null && elevFt !== null)
             ? Math.round(elevFt + (29.92 - altimInHg) * 1000) : null;
           const fc = getFlightCategory(raw, vis, clouds);
-          setMetar({ wd, ws, tp, raw, vis, fc, altimInHg, elevFt, pressureAlt, ageMin, runways });
+          setMetar({ wd, ws, tp, raw, vis, fc, altimInHg, elevFt, pressureAlt, ageMin, runways, isVRB });
           setStatus("ok");
           onFill({ windDir: wd, windSpeed: ws, oat: tp, pressureAlt, runways });
         } catch(e) {
@@ -1113,10 +1126,16 @@
             <div style={{ display:"flex", gap:"8px" }}>
               <input value={icao} onChange={e => setIcao(e.target.value.toUpperCase().slice(0,4))}
                 onKeyDown={e => { if (e.key === "Enter") fetchMetar(); }}
-                placeholder="KLAF"
+                placeholder="e.g. KLAF"
                 style={{ flex:1, minWidth:0, background:C.bg, border:`1px solid ${C.border}`, borderRadius:"3px", padding:"10px 12px", color:C.text, fontFamily:mono, fontSize:"18px", letterSpacing:"3px", boxSizing:"border-box" }} />
-              <button onClick={fetchMetar} style={{ flexShrink:0, background:C.green, border:"none", borderRadius:"3px", padding:"10px 16px", color:C.btnText, fontFamily:mono, fontSize:"12px", letterSpacing:"2px", cursor:"pointer", fontWeight:"bold", whiteSpace:"nowrap" }}>
-                {status === "loading" ? "..." : "FETCH"}
+              <button onClick={fetchMetar} style={{ flexShrink:0, background:C.green, border:"none", borderRadius:"3px", padding:"10px 16px", color:C.btnText, fontFamily:mono, fontSize:"12px", letterSpacing:"2px", cursor:"pointer", fontWeight:"bold", whiteSpace:"nowrap", minWidth:"64px" }}>
+                {status === "loading"
+                  ? <span style={{ display:"flex", gap:"4px", alignItems:"center", justifyContent:"center" }}>
+                      <span className="dot1" style={{ display:"inline-block", width:"6px", height:"6px", borderRadius:"50%", background:C.btnText }} />
+                      <span className="dot2" style={{ display:"inline-block", width:"6px", height:"6px", borderRadius:"50%", background:C.btnText }} />
+                      <span className="dot3" style={{ display:"inline-block", width:"6px", height:"6px", borderRadius:"50%", background:C.btnText }} />
+                    </span>
+                  : "FETCH"}
               </button>
             </div>
           </div>
@@ -1124,17 +1143,18 @@
           {metar && status === "ok" && (
             <div>
               <div style={{ fontSize:"10px", color:C.text, letterSpacing:"1px", marginBottom:"8px", wordBreak:"break-all", lineHeight:"1.4" }}>{metar.raw}</div>
-              {metar.ageMin !== null && metar.ageMin > 60 && (
+              {metar.ageMin !== null && metar.ageMin > 50 && (
                 <div style={{ background:C.errorBg, border:`1px solid ${C.warm}`, borderRadius:"3px", padding:"6px 10px", marginBottom:"8px", fontSize:"11px", color:C.warm, letterSpacing:"1px" }}>
                   ⚠ METAR is {metar.ageMin} min old — may not reflect current conditions
                 </div>
               )}
-              {metar.ageMin !== null && metar.ageMin <= 60 && (
+              {metar.ageMin !== null && metar.ageMin <= 50 && (
                 <div style={{ fontSize:"10px", color:C.dimmest, letterSpacing:"1px", marginBottom:"6px" }}>Observed {metar.ageMin} min ago</div>
               )}
               <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", alignItems:"center" }}>
                 <div style={{ background:metar.fc.color, borderRadius:"3px", padding:"3px 10px", fontSize:"13px", fontWeight:"bold", color:C.btnText, letterSpacing:"2px" }}>{metar.fc.cat}</div>
                 {metar.vis !== null && <div style={{ fontSize:"11px", color:C.note }}>VIS <span style={{color:C.text}}>{metar.vis}sm</span></div>}
+                {metar.isVRB && <div style={{ fontSize:"11px", color:C.warm, letterSpacing:"1px" }}>WIND VARIABLE — enter manually</div>}
                 {metar.altimInHg !== null && metar.altimInHg !== undefined && <div style={{ fontSize:"11px", color:C.note }}>ALTIM <span style={{color:C.text}}>{metar.altimInHg.toFixed(2)}"</span></div>}
                 {metar.elevFt !== null && metar.elevFt !== undefined && <div style={{ fontSize:"11px", color:C.note }}>FIELD ELEV <span style={{color:C.text}}>{metar.elevFt}ft</span></div>}
                 {metar.pressureAlt !== null && <div style={{ fontSize:"11px", color:C.note }}>PRESS ALT <span style={{color:C.green, fontWeight:"bold"}}>{metar.pressureAlt.toLocaleString()}ft</span></div>}
@@ -1214,8 +1234,8 @@
           </div>
           <MetarFetch onFill={({ windDir: wd, windSpeed: ws, oat: o, pressureAlt: pa, runways: rws }) => {
               const filled = [];
-              if (wd !== null) { setWindHeading(String(wd)); filled.push("wind"); }
-              if (ws !== null) { setWindSpeed(String(ws)); filled.push("wind"); }
+              if (wd !== null) { setWindHeading(String(wd)); filled.push("wind"); } else { setWindHeading(""); }
+              if (ws !== null) { setWindSpeed(String(ws)); filled.push("wind"); } else { setWindSpeed(""); }
               if (o  !== null) { setOat(String(o)); setTempUnit("C"); filled.push("oat"); }
               if (pa !== null && pa !== undefined) { setAlt(String(pa)); filled.push("alt"); }
               if (rws && rws.length > 0) setAirportRunways(rws);
@@ -1242,9 +1262,9 @@
                             const angle = (wHdg - r.heading + 360) % 360;
                             const hw = Math.round(wSpd * Math.cos(angle * Math.PI / 180) * 10) / 10;
                             const xw = Math.abs(Math.round(wSpd * Math.sin(angle * Math.PI / 180) * 10) / 10);
-                            return { ...r, hw, xw };
+                            return { num: r.num, heading: r.heading, length: r.length, hw: hw, xw: xw };
                           }
-                          return { ...r, hw: null, xw: null };
+                          return { num: r.num, heading: r.heading, length: r.length, hw: null, xw: null };
                         });
                         const bestHW = withWind.reduce((best, r) => r.hw !== null && (best === null || r.hw > best.hw) ? r : best, null);
                         return withWind.map(r => {
@@ -1307,7 +1327,7 @@
           </div>
           {error && <ErrorBox msg={error} />}
           <CalcButton onClick={handleCalculate} />
-          {result && <RunwayViz result={result} />}
+          {result && <RunwayViz result={result} airportRunways={airportRunways} runway={runway} />}
         </Card>
       );
     }
@@ -1356,7 +1376,7 @@
       );
     }
 
-    function RunwayViz({ result }) {
+    function RunwayViz({ result, airportRunways, runway }) {
       const C = useC();
       const dist50 = result.dist50Ft;
       const distGr = result.groundRollFt;
@@ -1611,7 +1631,7 @@
 
           {/* 1.5x safety buffer row */}
           <Grid2 style={{ marginBottom: "12px" }}>
-            {[{val: Math.round(distGr * 1.5), label: "GROUND ROLL ×1.5", color: markerColorRoll},
+            {[{val: Math.round(distGr * 1.5), label: "GROUND ROLL x1.5", color: markerColorRoll},
               {val: Math.round(dist50 * 1.5), label: "OVER 50 FT ×1.5",  color: markerColor50}].map(({val, label, color}) => (
               <div key={label} style={{ background: C.input, border: `1px solid ${color}55`, borderRadius: "3px", padding: "12px 16px", textAlign: "center" }}>
                 <div style={{ fontSize: "12px", letterSpacing: "2px", color: `${color}99`, marginBottom: "6px" }}>{label}</div>
@@ -1620,6 +1640,50 @@
               </div>
             ))}
           </Grid2>
+
+          
+
+          {(function() {
+            if (!airportRunways || !runway) return null;
+            var rwy = null;
+            for (var i = 0; i < airportRunways.length; i++) {
+              if (String(parseInt(airportRunways[i].num)) === String(runway)) { rwy = airportRunways[i]; break; }
+            }
+            if (!rwy || !rwy.length) return null;
+            var len = rwy.length;
+            var gr = result.groundRollFt || 0;
+            var d50 = result.dist50Ft || result.distFt || 0;
+            var gr15 = Math.round(gr * 1.5);
+            var gr15ok = gr === 0 || gr15 <= len;
+            var d50ok = d50 === 0 || d50 <= len;
+            var ok = gr15ok && d50ok;
+            var col = ok ? C.green : C.error;
+            return (
+              <div style={{ marginBottom: "12px", padding: "14px 16px", background: ok ? C.input : C.errorBg, border: "2px solid " + col, borderRadius: "4px" }}>
+                <div style={{ fontSize: "15px", letterSpacing: "2px", color: col, marginBottom: "10px", fontWeight: "bold", textAlign: "center" }}>
+                  {ok ? "RUNWAY LENGTH OK" : "RUNWAY LENGTH CHECK"}
+                </div>
+                <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "10px", justifyContent: "center" }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "3px" }}>AVAILABLE</div>
+                    <div style={{ fontSize: "26px", fontWeight: "bold", color: C.text }}>{len.toLocaleString()}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>FT</span></div>
+                    <div style={{ fontSize: "11px", color: C.dim, marginTop: "2px" }}>RWY {rwy.num}</div>
+                  </div>
+                  {gr > 0 && <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "3px" }}>GR x1.5</div>
+                    <div style={{ fontSize: "26px", fontWeight: "bold", color: gr15ok ? C.text : C.error }}>{gr15.toLocaleString()}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>FT</span></div>
+                    <div style={{ fontSize: "13px", color: gr15ok ? C.warm : C.error, marginTop: "2px", fontWeight: "bold" }}>{Math.round(gr15/len*100)}%</div>
+                  </div>}
+                  {d50 > 0 && <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "3px" }}>50FT DIST</div>
+                    <div style={{ fontSize: "26px", fontWeight: "bold", color: d50ok ? C.text : C.error }}>{d50.toLocaleString()}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>FT</span></div>
+                    <div style={{ fontSize: "13px", color: d50ok ? C.warm : C.error, marginTop: "2px", fontWeight: "bold" }}>{Math.round(d50/len*100)}%</div>
+                  </div>}
+                </div>
+                <div style={{ marginTop: "8px", padding: "8px 10px", background: C.warm + "22", border: "1px solid " + C.warm, borderRadius: "3px" }}><span style={{ fontSize: "12px", letterSpacing: "2px", color: C.warm, fontWeight: "bold", marginRight: "8px" }}>ADVISORY ONLY</span><span style={{ fontSize: "12px", color: C.text }}>Runway lengths sourced from OurAirports open data and may not reflect current conditions. Always verify with official AFD, NOTAMs, and airport authority before flight. Do not use as sole basis for go/no-go decision.</span></div>
+              </div>
+            );
+          })()}
 
           {/* Takeoff speeds */}
           {(() => {
@@ -1946,8 +2010,8 @@
 
           <MetarFetch onFill={({ windDir: wd, windSpeed: ws, oat: o, pressureAlt: pa, runways: rws }) => {
               const filled = [];
-              if (wd !== null) { setWindHeading(String(wd)); filled.push("wind"); }
-              if (ws !== null) { setWindSpeed(String(ws)); filled.push("wind"); }
+              if (wd !== null) { setWindHeading(String(wd)); filled.push("wind"); } else { setWindHeading(""); }
+              if (ws !== null) { setWindSpeed(String(ws)); filled.push("wind"); } else { setWindSpeed(""); }
               if (o  !== null) { setOat(String(o)); setTempUnit("C"); filled.push("oat"); }
               if (pa !== null && pa !== undefined) { setAlt(String(pa)); filled.push("alt"); }
               if (rws && rws.length > 0) setAirportRunways(rws);
@@ -1974,9 +2038,9 @@
                             const angle = (wHdg - r.heading + 360) % 360;
                             const hw = Math.round(wSpd * Math.cos(angle * Math.PI / 180) * 10) / 10;
                             const xw = Math.abs(Math.round(wSpd * Math.sin(angle * Math.PI / 180) * 10) / 10);
-                            return { ...r, hw, xw };
+                            return { num: r.num, heading: r.heading, length: r.length, hw: hw, xw: xw };
                           }
-                          return { ...r, hw: null, xw: null };
+                          return { num: r.num, heading: r.heading, length: r.length, hw: null, xw: null };
                         });
                         const bestHW = withWind.reduce((best, r) => r.hw !== null && (best === null || r.hw > best.hw) ? r : best, null);
                         return withWind.map(r => {
@@ -2040,12 +2104,12 @@
 
           {error && <ErrorBox msg={error} />}
           <CalcButton onClick={handleCalculate} />
-          {result && <LandingViz result={result} />}
+          {result && <LandingViz result={result} airportRunways={airportRunways} runway={runway} />}
         </Card>
       );
     }
 
-    function LandingViz({ result }) {
+    function LandingViz({ result, airportRunways, runway }) {
       const C = useC();
       const dist50 = result.distFt;
       const distGr = result.groundRollFt;
@@ -2303,7 +2367,7 @@
 
           {/* 1.5x safety buffer */}
           <Grid2 style={{ marginBottom: "12px" }}>
-            {[{val: Math.round(distGr * 1.5), label: "GROUND ROLL ×1.5", color: markerColorRoll},
+            {[{val: Math.round(distGr * 1.5), label: "GROUND ROLL x1.5", color: markerColorRoll},
               {val: Math.round(dist50 * 1.5), label: "OVER 50 FT ×1.5",  color: markerColor50}].map(({val, label, color}) => (
               <div key={label} style={{ background: C.input, border: `1px solid ${color}55`, borderRadius: "3px", padding: "12px 16px", textAlign: "center" }}>
                 <div style={{ fontSize: "12px", letterSpacing: "2px", color: `${color}99`, marginBottom: "6px" }}>{label}</div>
@@ -2312,6 +2376,52 @@
               </div>
             ))}
           </Grid2>
+
+          
+
+          
+
+          {(function() {
+            if (!airportRunways || !runway) return null;
+            var rwy = null;
+            for (var i = 0; i < airportRunways.length; i++) {
+              if (String(parseInt(airportRunways[i].num)) === String(runway)) { rwy = airportRunways[i]; break; }
+            }
+            if (!rwy || !rwy.length) return null;
+            var len = rwy.length;
+            var gr = result.groundRollFt || 0;
+            var d50 = result.dist50Ft || result.distFt || 0;
+            var gr15 = Math.round(gr * 1.5);
+            var gr15ok = gr === 0 || gr15 <= len;
+            var d50ok = d50 === 0 || d50 <= len;
+            var ok = gr15ok && d50ok;
+            var col = ok ? C.green : C.error;
+            return (
+              <div style={{ marginBottom: "12px", padding: "14px 16px", background: ok ? C.input : C.errorBg, border: "2px solid " + col, borderRadius: "4px" }}>
+                <div style={{ fontSize: "15px", letterSpacing: "2px", color: col, marginBottom: "10px", fontWeight: "bold", textAlign: "center" }}>
+                  {ok ? "RUNWAY LENGTH OK" : "RUNWAY LENGTH CHECK"}
+                </div>
+                <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "10px", justifyContent: "center" }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "3px" }}>AVAILABLE</div>
+                    <div style={{ fontSize: "26px", fontWeight: "bold", color: C.text }}>{len.toLocaleString()}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>FT</span></div>
+                    <div style={{ fontSize: "11px", color: C.dim, marginTop: "2px" }}>RWY {rwy.num}</div>
+                  </div>
+                  {gr > 0 && <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "3px" }}>GR x1.5</div>
+                    <div style={{ fontSize: "26px", fontWeight: "bold", color: gr15ok ? C.text : C.error }}>{gr15.toLocaleString()}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>FT</span></div>
+                    <div style={{ fontSize: "13px", color: gr15ok ? C.warm : C.error, marginTop: "2px", fontWeight: "bold" }}>{Math.round(gr15/len*100)}%</div>
+                  </div>}
+                  {d50 > 0 && <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "3px" }}>50FT DIST</div>
+                    <div style={{ fontSize: "26px", fontWeight: "bold", color: d50ok ? C.text : C.error }}>{d50.toLocaleString()}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>FT</span></div>
+                    <div style={{ fontSize: "13px", color: d50ok ? C.warm : C.error, marginTop: "2px", fontWeight: "bold" }}>{Math.round(d50/len*100)}%</div>
+                  </div>}
+                </div>
+                <div style={{ marginTop: "8px", padding: "8px 10px", background: C.warm + "22", border: "1px solid " + C.warm, borderRadius: "3px" }}><span style={{ fontSize: "12px", letterSpacing: "2px", color: C.warm, fontWeight: "bold", marginRight: "8px" }}>ADVISORY ONLY</span><span style={{ fontSize: "12px", color: C.text }}>Runway lengths sourced from OurAirports open data and may not reflect current conditions. Always verify with official AFD, NOTAMs, and airport authority before flight. Do not use as sole basis for go/no-go decision.</span></div>
+              </div>
+            );
+          })()}
 
           <NoteBox text="Power off, flaps 40°, 66 KIAS, full stall touchdown, maximum braking, paved/level/dry. Always verify against official POH charts." />
         </div>
@@ -3166,7 +3276,7 @@
       };
     }
 
-    function C172RunwayViz({ result }) {
+    function C172RunwayViz({ result, airportRunways, runway }) {
       const C = useC();
       const [t, setT] = useState(0);
       const animRef = useRef(null);
@@ -3389,8 +3499,8 @@
           </div>
           <MetarFetch onFill={({ windDir: wd, windSpeed: ws, oat: o, pressureAlt: pa, runways: rws }) => {
               const filled = [];
-              if (wd !== null) { setWindHeading(String(wd)); filled.push("wind"); }
-              if (ws !== null) { setWindSpeed(String(ws)); filled.push("wind"); }
+              if (wd !== null) { setWindHeading(String(wd)); filled.push("wind"); } else { setWindHeading(""); }
+              if (ws !== null) { setWindSpeed(String(ws)); filled.push("wind"); } else { setWindSpeed(""); }
               if (o  !== null) { setOat(String(o)); setTempUnit("C"); filled.push("oat"); }
               if (pa !== null && pa !== undefined) { setAlt(String(pa)); filled.push("alt"); }
               if (rws && rws.length > 0) setAirportRunways(rws);
@@ -3416,9 +3526,9 @@
                             const angle = (wHdg - r.heading + 360) % 360;
                             const hw = Math.round(wSpd * Math.cos(angle * Math.PI / 180) * 10) / 10;
                             const xw = Math.abs(Math.round(wSpd * Math.sin(angle * Math.PI / 180) * 10) / 10);
-                            return { ...r, hw, xw };
+                            return { num: r.num, heading: r.heading, length: r.length, hw: hw, xw: xw };
                           }
-                          return { ...r, hw: null, xw: null };
+                          return { num: r.num, heading: r.heading, length: r.length, hw: null, xw: null };
                         });
                         const bestHW = withWind.reduce((best, r) => r.hw !== null && (best === null || r.hw > best.hw) ? r : best, null);
                         return withWind.map(r => {
@@ -3496,7 +3606,7 @@
               <ISABadgeRow label="RESULTS" isaLabel={formatISA(result.isaDeviation)} isaDeviation={result.isaDeviation} isaTemp={result.isaTemp} />
 
               {/* Runway visualization */}
-              <C172RunwayViz result={result} />
+              <C172RunwayViz result={result} airportRunways={airportRunways} runway={runway} />
 
               {result.windWasClamped && (
                 <div style={{ background:C.errorBg, border:`1px solid ${C.warm}`, borderRadius:"3px", padding:"10px 14px", marginBottom:"12px", display:"flex", alignItems:"center", gap:"10px" }}>
@@ -3562,6 +3672,50 @@
                   </>);
                 })()}
               </Grid2>
+              
+
+              {(function() {
+            if (!airportRunways || !runway) return null;
+            var rwy = null;
+            for (var i = 0; i < airportRunways.length; i++) {
+              if (String(parseInt(airportRunways[i].num)) === String(runway)) { rwy = airportRunways[i]; break; }
+            }
+            if (!rwy || !rwy.length) return null;
+            var len = rwy.length;
+            var gr = result.groundRollFt || 0;
+            var d50 = result.dist50Ft || result.distFt || 0;
+            var gr15 = Math.round(gr * 1.5);
+            var gr15ok = gr === 0 || gr15 <= len;
+            var d50ok = d50 === 0 || d50 <= len;
+            var ok = gr15ok && d50ok;
+            var col = ok ? C.green : C.error;
+            return (
+              <div style={{ marginBottom: "12px", padding: "14px 16px", background: ok ? C.input : C.errorBg, border: "2px solid " + col, borderRadius: "4px" }}>
+                <div style={{ fontSize: "15px", letterSpacing: "2px", color: col, marginBottom: "10px", fontWeight: "bold", textAlign: "center" }}>
+                  {ok ? "RUNWAY LENGTH OK" : "RUNWAY LENGTH CHECK"}
+                </div>
+                <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "10px", justifyContent: "center" }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "3px" }}>AVAILABLE</div>
+                    <div style={{ fontSize: "26px", fontWeight: "bold", color: C.text }}>{len.toLocaleString()}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>FT</span></div>
+                    <div style={{ fontSize: "11px", color: C.dim, marginTop: "2px" }}>RWY {rwy.num}</div>
+                  </div>
+                  {gr > 0 && <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "3px" }}>GR x1.5</div>
+                    <div style={{ fontSize: "26px", fontWeight: "bold", color: gr15ok ? C.text : C.error }}>{gr15.toLocaleString()}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>FT</span></div>
+                    <div style={{ fontSize: "13px", color: gr15ok ? C.warm : C.error, marginTop: "2px", fontWeight: "bold" }}>{Math.round(gr15/len*100)}%</div>
+                  </div>}
+                  {d50 > 0 && <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "3px" }}>50FT DIST</div>
+                    <div style={{ fontSize: "26px", fontWeight: "bold", color: d50ok ? C.text : C.error }}>{d50.toLocaleString()}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>FT</span></div>
+                    <div style={{ fontSize: "13px", color: d50ok ? C.warm : C.error, marginTop: "2px", fontWeight: "bold" }}>{Math.round(d50/len*100)}%</div>
+                  </div>}
+                </div>
+                <div style={{ marginTop: "8px", padding: "8px 10px", background: C.warm + "22", border: "1px solid " + C.warm, borderRadius: "3px" }}><span style={{ fontSize: "12px", letterSpacing: "2px", color: C.warm, fontWeight: "bold", marginRight: "8px" }}>ADVISORY ONLY</span><span style={{ fontSize: "12px", color: C.text }}>Runway lengths sourced from OurAirports open data and may not reflect current conditions. Always verify with official AFD, NOTAMs, and airport authority before flight. Do not use as sole basis for go/no-go decision.</span></div>
+              </div>
+            );
+          })()}
+
               {/* Speeds */}
               <div style={{ background:C.input, border:`1px solid ${C.borderDim}`, borderRadius:"3px", padding:"12px 16px", marginBottom:"12px", display:"flex", justifyContent:"space-around", alignItems:"center" }}>
                 <div style={{ textAlign:"center" }}>
@@ -3574,7 +3728,9 @@
                   <div style={{ fontSize:"28px", fontWeight:"bold", color:markerColor50 }}>{result.barrierSpeed}<span style={{ fontSize:"13px", color:C.dim, marginLeft:"4px" }}>KIAS</span></div>
                 </div>
               </div>
-              <NoteBox text={`Short field technique (Sec. 4). Flaps 10°, full throttle before brake release. Lean mixture above 3,000 ft. Wind correction applied per POH (−10% per 9kt HW, +10% per 2kt TW).${surface === "grass" ? " +15% of ground roll applied to both distances for dry grass." : ""}`} />
+                          
+
+                          <NoteBox text={`Short field technique (Sec. 4). Flaps 10°, full throttle before brake release. Lean mixture above 3,000 ft. Wind correction applied per POH (−10% per 9kt HW, +10% per 2kt TW).${surface === "grass" ? " +15% of ground roll applied to both distances for dry grass." : ""}`} />
             </div>
           )}
         </Card>
@@ -3659,7 +3815,7 @@
       };
     }
 
-    function C172LandingViz({ result }) {
+    function C172LandingViz({ result, airportRunways, runway }) {
       const C = useC();
       const [t, setT] = useState(0);
       const animRef = useRef(null);
@@ -3851,8 +4007,8 @@
           </div>
           <MetarFetch onFill={({ windDir: wd, windSpeed: ws, oat: o, pressureAlt: pa, runways: rws }) => {
               const filled = [];
-              if (wd !== null) { setWindHeading(String(wd)); filled.push("wind"); }
-              if (ws !== null) { setWindSpeed(String(ws)); filled.push("wind"); }
+              if (wd !== null) { setWindHeading(String(wd)); filled.push("wind"); } else { setWindHeading(""); }
+              if (ws !== null) { setWindSpeed(String(ws)); filled.push("wind"); } else { setWindSpeed(""); }
               if (o  !== null) { setOat(String(o)); setTempUnit("C"); filled.push("oat"); }
               if (pa !== null && pa !== undefined) { setAlt(String(pa)); filled.push("alt"); }
               if (rws && rws.length > 0) setAirportRunways(rws);
@@ -3878,9 +4034,9 @@
                             const angle = (wHdg - r.heading + 360) % 360;
                             const hw = Math.round(wSpd * Math.cos(angle * Math.PI / 180) * 10) / 10;
                             const xw = Math.abs(Math.round(wSpd * Math.sin(angle * Math.PI / 180) * 10) / 10);
-                            return { ...r, hw, xw };
+                            return { num: r.num, heading: r.heading, length: r.length, hw: hw, xw: xw };
                           }
-                          return { ...r, hw: null, xw: null };
+                          return { num: r.num, heading: r.heading, length: r.length, hw: null, xw: null };
                         });
                         const bestHW = withWind.reduce((best, r) => r.hw !== null && (best === null || r.hw > best.hw) ? r : best, null);
                         return withWind.map(r => {
@@ -3969,7 +4125,7 @@
           {result && (
             <div style={{ marginTop:"28px" }}>
               <ISABadgeRow label="RESULTS" isaLabel={formatISA(result.isaDeviation)} isaDeviation={result.isaDeviation} isaTemp={result.isaTemp} />
-              <C172LandingViz result={result} />
+              <C172LandingViz result={result} airportRunways={airportRunways} runway={runway} />
               {result.windWasClamped && (
                 <div style={{ background:C.errorBg, border:`1px solid ${C.warm}`, borderRadius:"3px", padding:"10px 14px", marginBottom:"12px", display:"flex", alignItems:"center", gap:"10px" }}>
                   <div style={{ color:C.warm, fontSize:"16px" }}>⚠</div>
@@ -4025,7 +4181,53 @@
                 <div style={{ fontSize:"32px", fontWeight:"bold", color:cRoll }}>{result.approachSpeed}<span style={{ fontSize:"13px", color:C.dim, marginLeft:"4px" }}>KIAS</span></div>
                 {result.flapsAdj>0 && <div style={{ fontSize:"11px", color:C.warm, marginTop:"4px", letterSpacing:"1px" }}>FLAPS UP — +9 KIAS FROM NORMAL 61 KIAS</div>}
               </div>
-              <NoteBox text={`Short field technique (Sec. 4). Flaps ${result.flaps==="up"?"UP (+35% distances, +9kt approach)":"FULL"}, idle power, max braking.${result.grassAdj>0?" +45% of ground roll applied to both distances for dry grass.":""} Wind correction per POH. Always verify against official POH charts.`} />
+                          
+
+                          
+
+                          {(function() {
+            if (!airportRunways || !runway) return null;
+            var rwy = null;
+            for (var i = 0; i < airportRunways.length; i++) {
+              if (String(parseInt(airportRunways[i].num)) === String(runway)) { rwy = airportRunways[i]; break; }
+            }
+            if (!rwy || !rwy.length) return null;
+            var len = rwy.length;
+            var gr = result.groundRollFt || 0;
+            var d50 = result.dist50Ft || result.distFt || 0;
+            var gr15 = Math.round(gr * 1.5);
+            var gr15ok = gr === 0 || gr15 <= len;
+            var d50ok = d50 === 0 || d50 <= len;
+            var ok = gr15ok && d50ok;
+            var col = ok ? C.green : C.error;
+            return (
+              <div style={{ marginBottom: "12px", padding: "14px 16px", background: ok ? C.input : C.errorBg, border: "2px solid " + col, borderRadius: "4px" }}>
+                <div style={{ fontSize: "15px", letterSpacing: "2px", color: col, marginBottom: "10px", fontWeight: "bold", textAlign: "center" }}>
+                  {ok ? "RUNWAY LENGTH OK" : "RUNWAY LENGTH CHECK"}
+                </div>
+                <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginBottom: "10px", justifyContent: "center" }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "3px" }}>AVAILABLE</div>
+                    <div style={{ fontSize: "26px", fontWeight: "bold", color: C.text }}>{len.toLocaleString()}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>FT</span></div>
+                    <div style={{ fontSize: "11px", color: C.dim, marginTop: "2px" }}>RWY {rwy.num}</div>
+                  </div>
+                  {gr > 0 && <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "3px" }}>GR x1.5</div>
+                    <div style={{ fontSize: "26px", fontWeight: "bold", color: gr15ok ? C.text : C.error }}>{gr15.toLocaleString()}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>FT</span></div>
+                    <div style={{ fontSize: "13px", color: gr15ok ? C.warm : C.error, marginTop: "2px", fontWeight: "bold" }}>{Math.round(gr15/len*100)}%</div>
+                  </div>}
+                  {d50 > 0 && <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "3px" }}>50FT DIST</div>
+                    <div style={{ fontSize: "26px", fontWeight: "bold", color: d50ok ? C.text : C.error }}>{d50.toLocaleString()}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>FT</span></div>
+                    <div style={{ fontSize: "13px", color: d50ok ? C.warm : C.error, marginTop: "2px", fontWeight: "bold" }}>{Math.round(d50/len*100)}%</div>
+                  </div>}
+                </div>
+                <div style={{ marginTop: "8px", padding: "8px 10px", background: C.warm + "22", border: "1px solid " + C.warm, borderRadius: "3px" }}><span style={{ fontSize: "12px", letterSpacing: "2px", color: C.warm, fontWeight: "bold", marginRight: "8px" }}>ADVISORY ONLY</span><span style={{ fontSize: "12px", color: C.text }}>Runway lengths sourced from OurAirports open data and may not reflect current conditions. Always verify with official AFD, NOTAMs, and airport authority before flight. Do not use as sole basis for go/no-go decision.</span></div>
+              </div>
+            );
+          })()}
+
+                          <NoteBox text={`Short field technique (Sec. 4). Flaps ${result.flaps==="up"?"UP (+35% distances, +9kt approach)":"FULL"}, idle power, max braking.${result.grassAdj>0?" +45% of ground roll applied to both distances for dry grass.":""} Wind correction per POH. Always verify against official POH charts.`} />
             </div>
           )}
         </Card>
