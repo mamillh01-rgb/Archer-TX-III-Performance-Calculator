@@ -1028,9 +1028,12 @@
       const [status, setStatus] = useState(null);
       const [metar, setMetar] = useState(null);
       const [msg, setMsg] = useState("");
+      const [mode, setMode] = useState("current"); // "current" | "forecast"
+      const [forecast, setForecast] = useState(null); // array of hourly objects
+      const [selectedHour, setSelectedHour] = useState(0); // index into forecast array
+      const [latLon, setLatLon] = useState(null);
 
       function getFlightCategory(raw, visib, clouds) {
-        // Ceiling: lowest BKN or OVC layer
         let ceiling = 99999;
         if (clouds && Array.isArray(clouds)) {
           clouds.forEach(c => {
@@ -1048,53 +1051,53 @@
           }
         }
         const vis = visib !== null && visib !== undefined ? parseFloat(visib) : 99;
-        if (ceiling < 500  || vis < 1)   return { cat: "LIFR", color: "#cc44cc" };
-        if (ceiling < 1000 || vis < 3)   return { cat: "IFR",  color: "#dd4444" };
-        if (ceiling < 3000 || vis < 5)   return { cat: "MVFR", color: "#4488dd" };
+        if (ceiling < 500  || vis < 1) return { cat: "LIFR", color: "#cc44cc" };
+        if (ceiling < 1000 || vis < 3) return { cat: "IFR",  color: "#dd4444" };
+        if (ceiling < 3000 || vis < 5) return { cat: "MVFR", color: "#4488dd" };
         return { cat: "VFR", color: C.green };
       }
 
-      async function fetchMetar() {
+      async function fetchAll() {
         const id = icao.trim().toUpperCase();
         if (!id || id.length < 3) { setMsg("Enter a valid airport identifier."); setStatus("error"); return; }
-        setStatus("loading"); setMetar(null); setMsg("");
+        setStatus("loading"); setMetar(null); setForecast(null); setMsg("");
         try {
-          const url = "https://metar-proxy.mamillh01.workers.dev/?id=" + id;
-          const res = await fetch(url);
-          if (!res.ok) throw new Error("failed");
-          const data = await res.json();
-          if (!data || data.length === 0) { setMsg("No METAR found for " + id + "."); setStatus("error"); return; }
-          const m = data[0];
+          // Fetch METAR, airport data, and runways in parallel
+          const [metarRes, airportRes, runwayRes] = await Promise.all([
+            fetch("https://metar-proxy.mamillh01.workers.dev/?id=" + id),
+            fetch("https://metar-proxy.mamillh01.workers.dev/?id=" + id + "&type=airport"),
+            fetch("https://metar-proxy.mamillh01.workers.dev/?id=" + id + "&type=runways"),
+          ]);
 
-          // Hardcoded runway database for common airports
-          const RUNWAY_DB = {};
+          if (!metarRes.ok) throw new Error("failed");
+          const metarData = await metarRes.json();
+          if (!metarData || metarData.length === 0) { setMsg("No METAR found for " + id + "."); setStatus("error"); return; }
+          const m = metarData[0];
 
-          // Fetch accurate airport elevation separately
-          let elevFt = null;
-          let runways = [];
-          try {
-            const [airportRes, runwayRes] = await Promise.all([
-              fetch("https://metar-proxy.mamillh01.workers.dev/?id=" + id + "&type=airport"),
-              fetch("https://metar-proxy.mamillh01.workers.dev/?id=" + id + "&type=runways"),
-            ]);
-            if (airportRes.ok) {
-              const airportData = await airportRes.json();
-              if (airportData && airportData.length > 0 && airportData[0].elev !== undefined) {
-                elevFt = Math.round(parseFloat(airportData[0].elev) * 3.28084);
-              }
+          let elevFt = null, lat = null, lon = null, runways = [];
+          if (airportRes.ok) {
+            const airportData = await airportRes.json();
+            if (airportData && airportData.length > 0) {
+              if (airportData[0].elev !== undefined) elevFt = Math.round(parseFloat(airportData[0].elev) * 3.28084);
+              if (airportData[0].lat !== undefined) lat = parseFloat(airportData[0].lat).toFixed(4);
+              if (airportData[0].lon !== undefined) lon = parseFloat(airportData[0].lon).toFixed(4);
             }
-            if (runwayRes.ok) {
-              const rwyData = await runwayRes.json();
-              if (Array.isArray(rwyData) && rwyData.length > 0) {
-                runways = rwyData.map(r => ({
-                  num: r.num,
-                  heading: parseInt(r.num.replace(/[LRC]/g,"")) * 10,
-                  length: r.length || null,
-                }));
-              }
+          }
+          if (runwayRes.ok) {
+            const rwyData = await runwayRes.json();
+            if (Array.isArray(rwyData) && rwyData.length > 0) {
+              runways = rwyData.map(r => ({
+                num: r.num,
+                heading: parseInt(r.num.replace(/[LRC]/g,"")) * 10,
+                length: r.length || null,
+              }));
             }
-          } catch(e) { /* fall through */ }
+          }
 
+          const ll = lat && lon ? { lat, lon, elevFt } : null;
+          if (ll) setLatLon(ll);
+
+          // Parse METAR
           const raw = m.rawOb || m.rawObservation || "";
           const isVRB = raw.toUpperCase().includes("VRB");
           const wd  = (!isVRB && m.wdir !== undefined && m.wdir !== null) ? parseInt(m.wdir) : null;
@@ -1104,48 +1107,140 @@
           const clouds = m.clouds || null;
           const altim = m.altim !== undefined && m.altim !== null ? parseFloat(m.altim) : null;
           const altimInHg = altim !== null ? Math.round(altim * 0.02953 * 100) / 100 : null;
-          // obsTime is Unix timestamp in seconds
           const obsTime = m.obsTime ? new Date(m.obsTime * 1000) : null;
           const ageMin = obsTime ? Math.round((Date.now() - obsTime.getTime()) / 60000) : null;
           const pressureAlt = (altimInHg !== null && elevFt !== null)
             ? Math.round(elevFt + (29.92 - altimInHg) * 1000) : null;
           const fc = getFlightCategory(raw, vis, clouds);
-          setMetar({ wd, ws, tp, raw, vis, fc, altimInHg, elevFt, pressureAlt, ageMin, runways, isVRB });
+          const metarObj = { wd, ws, tp, raw, vis, fc, altimInHg, elevFt, pressureAlt, ageMin, runways, isVRB };
+          setMetar(metarObj);
+
+          // Auto-fill from METAR if in current mode
+          if (mode === "current") {
+            onFill({ windDir: wd, windSpeed: ws, oat: tp, pressureAlt, runways });
+          }
+
+          // Fetch forecast from Open-Meteo in parallel if we have coords
+          if (ll) {
+            try {
+              const omUrl = "https://api.open-meteo.com/v1/forecast" +
+                "?latitude=" + ll.lat +
+                "&longitude=" + ll.lon +
+                "&hourly=temperature_2m,pressure_msl,windspeed_10m,winddirection_10m" +
+                "&wind_speed_unit=kn" +
+                "&models=best_match" +
+                "&forecast_days=2" +
+                "&timeformat=unixtime" +
+                "&timezone=UTC";
+              const omRes = await fetch(omUrl);
+              if (omRes.ok) {
+                const omData = await omRes.json();
+                const h = omData.hourly;
+                if (h && h.time && h.time.length > 0) {
+                  const now = Date.now();
+                  const cutoff = now + 24 * 3600000;
+                  const hourly = [];
+                  for (let i = 0; i < h.time.length; i++) {
+                    const t = h.time[i] * 1000;
+                    if (t < now || t > cutoff) continue;
+                    const presHpa = h.pressure_msl[i];
+                    const altimInHg2 = presHpa != null ? Math.round(presHpa * 0.02953 * 100) / 100 : null;
+                    const windKt = h.windspeed_10m[i] != null ? Math.round(h.windspeed_10m[i]) : null;
+                    const windDir2 = h.winddirection_10m[i] != null ? Math.round(h.winddirection_10m[i]) : null;
+                    const tempC = h.temperature_2m[i] != null ? Math.round(h.temperature_2m[i] * 10) / 10 : null;
+                    hourly.push({ time: new Date(t).toISOString(), tempC, altimInHg: altimInHg2, windKt, windDir: windDir2 });
+                  }
+                  if (hourly.length > 0) {
+                    setForecast(hourly);
+                    setSelectedHour(0);
+                    if (mode === "forecast") fillFromForecastHour(hourly, 0, ll, metarObj);
+                  }
+                }
+              }
+            } catch(e) { /* forecast optional, don't fail the whole fetch */ }
+          }
+
           setStatus("ok");
-          onFill({ windDir: wd, windSpeed: ws, oat: tp, pressureAlt, runways });
         } catch(e) {
-          setMsg("Failed to fetch METAR. Check connection or try 4-letter ICAO (e.g. KLAF).");
+          setMsg("Failed to fetch. Check connection or try 4-letter ICAO (e.g. KLAF).");
           setStatus("error");
         }
       }
 
+
+      function fillFromForecastHour(hours, idx, ll, metarObj) {
+        const h = hours[idx];
+        if (!h) return;
+        const loc = ll || latLon;
+        const elevFt = loc ? loc.elevFt : null;
+        const pressureAlt = (h.altimInHg != null && elevFt != null)
+          ? Math.round(elevFt + (29.92 - h.altimInHg) * 1000) : null;
+        const met = metarObj || metar;
+        const runways = met ? met.runways : [];
+        const isCalm = h.windKt != null && h.windKt <= 3;
+        onFill({
+          windDir: (!isCalm && h.windDir != null && h.windDir !== 0) ? h.windDir : null,
+          windSpeed: (!isCalm && h.windKt != null) ? h.windKt : null,
+          oat: h.tempC != null ? h.tempC : null,
+          pressureAlt,
+          runways,
+        });
+      }
+
+      function formatHourLabel(isoTime) {
+        const d = new Date(isoTime);
+        const now = new Date();
+        const diffH = Math.round((d - now) / 3600000);
+        const localHH = d.getHours().toString().padStart(2, "0");
+        const localMM = d.getMinutes().toString().padStart(2, "0");
+        const utcHH = d.getUTCHours().toString().padStart(2, "0");
+        const offset = diffH === 0 ? "NOW" : "+" + diffH + "h";
+        return offset + " · " + localHH + ":" + localMM + " local · " + utcHH + "Z";
+      }
+
+      const selHour = forecast ? forecast[selectedHour] : null;
+
       return (
-        <div style={{ background:C.input, border:`1px solid ${C.border}`, borderRadius:"3px", padding:"12px 14px", marginBottom:"8px" }}>
-          <div style={{ fontSize:"12px", letterSpacing:"3px", color:C.green, marginBottom:"10px" }}>METAR AUTO-FILL</div>
-          <div style={{ display:"flex", flexDirection:"column", gap:"8px", marginBottom:"8px" }}>
-            <div style={{ display:"flex", gap:"8px" }}>
-              <input value={icao} onChange={e => setIcao(e.target.value.toUpperCase().slice(0,4))}
-                onKeyDown={e => { if (e.key === "Enter") fetchMetar(); }}
-                placeholder="e.g. KLAF"
-                style={{ flex:1, minWidth:0, background:C.bg, border:`1px solid ${C.border}`, borderRadius:"3px", padding:"10px 12px", color:C.text, fontFamily:mono, fontSize:"18px", letterSpacing:"3px", boxSizing:"border-box" }} />
-              <button onClick={fetchMetar} style={{ flexShrink:0, background:C.green, border:"none", borderRadius:"3px", padding:"10px 16px", color:C.btnText, fontFamily:mono, fontSize:"12px", letterSpacing:"2px", cursor:"pointer", fontWeight:"bold", whiteSpace:"nowrap", minWidth:"64px" }}>
-                {status === "loading"
-                  ? <span style={{ display:"flex", gap:"4px", alignItems:"center", justifyContent:"center" }}>
-                      <span className="dot1" style={{ display:"inline-block", width:"6px", height:"6px", borderRadius:"50%", background:C.btnText }} />
-                      <span className="dot2" style={{ display:"inline-block", width:"6px", height:"6px", borderRadius:"50%", background:C.btnText }} />
-                      <span className="dot3" style={{ display:"inline-block", width:"6px", height:"6px", borderRadius:"50%", background:C.btnText }} />
-                    </span>
-                  : "FETCH"}
-              </button>
+        <div style={{ background:C.input, border:"1px solid " + C.border, borderRadius:"3px", padding:"12px 14px", marginBottom:"8px" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px" }}>
+            <div style={{ fontSize:"12px", letterSpacing:"3px", color:C.green }}>WEATHER AUTO-FILL</div>
+            <div style={{ display:"flex", gap:"0px", borderRadius:"3px", overflow:"hidden", border:"1px solid " + C.border }}>
+              {["current","forecast"].map(m2 => (
+                <button key={m2} onClick={() => setMode(m2)} style={{
+                  padding:"4px 10px", background: mode === m2 ? C.green : C.bg,
+                  border:"none", color: mode === m2 ? C.btnText : C.dim,
+                  fontFamily:mono, fontSize:"10px", letterSpacing:"1px", cursor:"pointer", textTransform:"uppercase",
+                }}>{m2 === "current" ? "METAR" : "FORECAST"}</button>
+              ))}
             </div>
           </div>
-          {msg && <div style={{ fontSize:"12px", color:C.error, letterSpacing:"1px" }}>{msg}</div>}
-          {metar && status === "ok" && (
+
+          <div style={{ display:"flex", gap:"8px", marginBottom:"8px" }}>
+            <input value={icao} onChange={e => setIcao(e.target.value.toUpperCase().slice(0,4))}
+              onKeyDown={e => { if (e.key === "Enter") fetchAll(); }}
+              placeholder="e.g. KLAF"
+              style={{ flex:1, minWidth:0, background:C.bg, border:"1px solid " + C.border, borderRadius:"3px", padding:"10px 12px", color:C.text, fontFamily:mono, fontSize:"18px", letterSpacing:"3px", boxSizing:"border-box" }} />
+            <button onClick={fetchAll}
+              style={{ flexShrink:0, background:C.green, border:"none", borderRadius:"3px", padding:"10px 16px", color:C.btnText, fontFamily:mono, fontSize:"12px", letterSpacing:"2px", cursor:"pointer", fontWeight:"bold", whiteSpace:"nowrap", minWidth:"64px" }}>
+              {status === "loading"
+                ? <span style={{ display:"flex", gap:"4px", alignItems:"center", justifyContent:"center" }}>
+                    <span className="dot1" style={{ display:"inline-block", width:"6px", height:"6px", borderRadius:"50%", background:C.btnText }} />
+                    <span className="dot2" style={{ display:"inline-block", width:"6px", height:"6px", borderRadius:"50%", background:C.btnText }} />
+                    <span className="dot3" style={{ display:"inline-block", width:"6px", height:"6px", borderRadius:"50%", background:C.btnText }} />
+                  </span>
+                : "FETCH"}
+            </button>
+          </div>
+
+          {msg && <div style={{ fontSize:"12px", color:C.error, letterSpacing:"1px", marginBottom:"6px" }}>{msg}</div>}
+
+          {/* CURRENT METAR display */}
+          {mode === "current" && metar && status === "ok" && (
             <div>
               <div style={{ fontSize:"10px", color:C.text, letterSpacing:"1px", marginBottom:"8px", wordBreak:"break-all", lineHeight:"1.4" }}>{metar.raw}</div>
               {metar.ageMin !== null && metar.ageMin > 50 && (
-                <div style={{ background:C.errorBg, border:`1px solid ${C.warm}`, borderRadius:"3px", padding:"6px 10px", marginBottom:"8px", fontSize:"11px", color:C.warm, letterSpacing:"1px" }}>
-                  ⚠ METAR is {metar.ageMin} min old — may not reflect current conditions
+                <div style={{ background:C.errorBg, border:"1px solid " + C.warm, borderRadius:"3px", padding:"6px 10px", marginBottom:"8px", fontSize:"11px", color:C.warm, letterSpacing:"1px" }}>
+                  METAR is {metar.ageMin} min old — may not reflect current conditions
                 </div>
               )}
               {metar.ageMin !== null && metar.ageMin <= 50 && (
@@ -1155,11 +1250,48 @@
                 <div style={{ background:metar.fc.color, borderRadius:"3px", padding:"3px 10px", fontSize:"13px", fontWeight:"bold", color:C.btnText, letterSpacing:"2px" }}>{metar.fc.cat}</div>
                 {metar.vis !== null && <div style={{ fontSize:"11px", color:C.note }}>VIS <span style={{color:C.text}}>{metar.vis}sm</span></div>}
                 {metar.isVRB && <div style={{ fontSize:"11px", color:C.warm, letterSpacing:"1px" }}>WIND VARIABLE — enter manually</div>}
-                {metar.altimInHg !== null && metar.altimInHg !== undefined && <div style={{ fontSize:"11px", color:C.note }}>ALTIM <span style={{color:C.text}}>{metar.altimInHg.toFixed(2)}"</span></div>}
-                {metar.elevFt !== null && metar.elevFt !== undefined && <div style={{ fontSize:"11px", color:C.note }}>FIELD ELEV <span style={{color:C.text}}>{metar.elevFt}ft</span></div>}
+                {metar.altimInHg !== null && <div style={{ fontSize:"11px", color:C.note }}>ALTIM <span style={{color:C.text}}>{metar.altimInHg.toFixed(2)}"</span></div>}
+                {metar.elevFt !== null && <div style={{ fontSize:"11px", color:C.note }}>FIELD ELEV <span style={{color:C.text}}>{metar.elevFt}ft</span></div>}
                 {metar.pressureAlt !== null && <div style={{ fontSize:"11px", color:C.note }}>PRESS ALT <span style={{color:C.green, fontWeight:"bold"}}>{metar.pressureAlt.toLocaleString()}ft</span></div>}
               </div>
             </div>
+          )}
+
+          {/* FORECAST display */}
+          {mode === "forecast" && forecast && status === "ok" && (
+            <div>
+              {!latLon && <div style={{ fontSize:"11px", color:C.warm, marginBottom:"6px" }}>Fetch METAR first to enable forecast</div>}
+              <div style={{ fontSize:"11px", letterSpacing:"2px", color:C.dim, marginBottom:"6px" }}>DEPARTURE TIME (NWS HOURLY FORECAST)</div>
+              <input type="range" min="0" max={forecast.length - 1} step="1" value={selectedHour}
+                onChange={e => {
+                  const idx = parseInt(e.target.value);
+                  setSelectedHour(idx);
+                  fillFromForecastHour(forecast, idx, null, null);
+                }}
+                style={{ width:"100%", accentColor:C.green, marginBottom:"4px" }} />
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:"10px", color:C.dim, marginBottom:"8px" }}>
+                <span>NOW</span>
+                <span style={{ color:C.green, fontWeight:"bold" }}>{formatHourLabel(forecast[selectedHour].time)}</span>
+                <span>+{forecast.length - 1}h</span>
+              </div>
+
+              {selHour && (
+                <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", alignItems:"center" }}>
+                  {selHour.tempC != null && <div style={{ fontSize:"11px", color:C.note }}>OAT <span style={{color:C.text}}>{selHour.tempC}°C</span></div>}
+                  {selHour.windDir != null && <div style={{ fontSize:"11px", color:C.note }}>WIND <span style={{color:C.text}}>{selHour.windDir}° @ {selHour.windKt}kt</span></div>}
+                  {selHour.altimInHg != null && <div style={{ fontSize:"11px", color:C.note }}>ALTIM <span style={{color:C.text}}>{selHour.altimInHg.toFixed(2)}"</span></div>}
+                  {selHour.altimInHg != null && latLon && latLon.elevFt != null && (
+                    <div style={{ fontSize:"11px", color:C.note }}>PRESS ALT <span style={{color:C.green, fontWeight:"bold"}}>{(Math.round(latLon.elevFt + (29.92 - selHour.altimInHg) * 1000)).toLocaleString()}ft</span></div>
+                  )}
+                </div>
+              )}
+              <div style={{ fontSize:"10px", color:C.dimmest, marginTop:"6px", letterSpacing:"1px" }}>NWS gridded forecast · drag slider to select departure time · auto-fills OAT, wind, pressure alt</div>
+            </div>
+          )}
+
+          
+          {mode === "forecast" && !forecast && status !== "loading" && (
+            <div style={{ fontSize:"11px", color:C.dim, letterSpacing:"1px" }}>Enter airport ICAO and hit FETCH to load METAR and forecast together</div>
           )}
         </div>
       );
