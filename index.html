@@ -5165,6 +5165,14 @@ null}
           tags: ["Takeoff", "Landing", "Climb", "Time·Fuel·Dist", "Cruise", "Speeds"],
           available: true,
         },
+        {
+          id: "pa44",
+          name: "PA-44-180",
+          sub: "Seminole",
+          desc: "Twin Engine · Multi-Engine Trainer",
+          tags: ["Takeoff", "Landing", "Climb", "Cruise", "OEI Performance"],
+          available: false,
+        },
       ];
 
       return (
@@ -5183,7 +5191,7 @@ null}
               <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "8px", letterSpacing: "2px" }}>v0.9.0</div>
             </div>
 
-            <div style={{ display: "flex", flexDirection: mobile ? "column" : "row", gap: "16px", width: "100%", maxWidth: "700px" }}>
+            <div style={{ display: "flex", flexDirection: mobile ? "column" : "row", flexWrap: "wrap", gap: "16px", width: "100%", maxWidth: "760px" }}>
               {aircraft.map(ac => (
                 <button key={ac.id} onClick={() => ac.available && onSelect(ac.id)}
                   style={{
@@ -5205,7 +5213,7 @@ null}
                     </div>
                     {ac.available
                       ? <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.green, background: "rgba(106,170,122,0.15)", border: `1px solid ${C.green}55`, padding: "3px 8px", borderRadius: "2px" }}>AVAILABLE</div>
-                      : <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dimmest, background: C.input, border: `1px solid ${C.borderDim}`, padding: "3px 8px", borderRadius: "2px" }}>SOON</div>
+                      : <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.warm, background: C.warm + "15", border: `1px solid ${C.warm}55`, padding: "3px 8px", borderRadius: "2px" }}>COMING SOON</div>
                     }
                   </div>
                   <div style={{ fontSize: "11px", color: C.dimmest, letterSpacing: "1px", marginBottom: "16px" }}>{ac.desc}</div>
