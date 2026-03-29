@@ -5205,7 +5205,314 @@ null}
       3000: [[-30,1975], [0,3000], [10,3000]],
     };
 
-    // Fig 5-21: Climb Performance - One Engine Operating - Gear Up
+    // Fig 5-27: Speed Power - TAS data
+
+    const semTASPerf = {
+      55: {
+        data: {
+          0:     [[15,134.5],[32,136.6],[50,138.9]],
+          4000:  [[-22.2,134.5],[0,137.9],[20,140.5],[42,143.2]],
+          6000:  [[-40,137],[-20,138],[0,141],[20,143.6],[40,146.1]],
+          10000: [[-40,141],[-16,144.8],[4,147.8],[20,150],[26,150.8]],
+          12000: [[-40,144.3],[-20,147.6],[0,150.7]],
+          14000: [[-40,147.8],[-23,150.8]],
+        },
+        alts: [0,4000,6000,10000,12000,14000],
+        econLo: { alt:2000, offset:-2.45 },
+        econHi: { alt:12000, offset:-3.15 },
+      },
+      65: {
+        data: {
+          0:     [[15,143.6],[32,146],[50,148.8]],
+          4000:  [[-22.2,143.6],[-4,147],[20,150.8],[42,153.8]],
+          8000:  [[-40,147.6],[-20,151.1],[0,154.6],[16,157]],
+          10000: [[-40,151],[-20,154.8],[-6.8,157]],
+          12000: [[-40,155],[-29,157]],
+        },
+        alts: [0,4000,8000,10000,12000],
+        econLo: { alt:2000, offset:-1.81 },
+        econHi: { alt:12000, offset:-3.00 },
+      },
+      75: {
+        data: {
+          0:     [[15,152],[32,154.5],[50,157.2]],
+          4000:  [[-22.5,152],[0,156],[20,159.5],[35,161.8]],
+          6000:  [[-40,152.4],[-18,156.5],[0,159.9],[11.5,161.8]],
+          8000:  [[-40,156],[-20,160],[-10,161.8]],
+          10000: [[-40,160],[-30.8,161.8]],
+        },
+        alts: [0,4000,6000,8000,10000],
+        econLo: { alt:2000, offset:-1.38 },
+        econHi: { alt:8000,  offset:-1.50 },
+      },
+    };
+
+    function getSemTAS(pct, altFt, oatC, mixture) {
+      const cfg = semTASPerf[pct];
+      if (!cfg) return null;
+      const clampedAlt = Math.max(cfg.alts[0], Math.min(cfg.alts[cfg.alts.length-1], altFt));
+
+      // Interpolate perf TAS
+      let perfTAS = null;
+      for (let i = 0; i < cfg.alts.length - 1; i++) {
+        if (clampedAlt >= cfg.alts[i] && clampedAlt <= cfg.alts[i+1]) {
+          const lo = toInterpList(cfg.data[cfg.alts[i]], oatC);
+          const hi = toInterpList(cfg.data[cfg.alts[i+1]], oatC);
+          const t = (clampedAlt - cfg.alts[i]) / (cfg.alts[i+1] - cfg.alts[i]);
+          perfTAS = lo + t * (hi - lo);
+          break;
+        }
+      }
+      if (perfTAS === null) perfTAS = toInterpList(cfg.data[cfg.alts[cfg.alts.length-1]], oatC);
+
+      if (mixture === "perf") return Math.round(perfTAS * 10) / 10;
+
+      // Econ: apply linear altitude-based offset
+      const { econLo, econHi } = cfg;
+      const t = Math.max(0, Math.min(1, (clampedAlt - econLo.alt) / (econHi.alt - econLo.alt)));
+      const offset = econLo.offset + t * (econHi.offset - econLo.offset);
+      return Math.round((perfTAS + offset) * 10) / 10;
+    }
+
+    // Fig 5-25: Fuel & Power Setting Table
+
+    // "FT" = full throttle, null = not achievable
+    // Structure: semCruiseTable[pct][rpm][alt] = MAP in. Hg, or "FT" or null
+    const semCruiseTable = {
+      55: {
+        bhp: 99, gph: 8.7,
+        rpms: [2100, 2200, 2300, 2400],
+        data: {
+          2100: { 0:22.3, 1000:22.0, 2000:21.7, 3000:21.3, 4000:21.1, 5000:20.8, 6000:20.5, 7000:20.2, 8000:20.0, 9000:19.7, 10000:19.5, 11000:19.2, 12000:"FT", 13000:null, 14000:null },
+          2200: { 0:21.7, 1000:21.3, 2000:21.0, 3000:20.7, 4000:20.5, 5000:20.2, 6000:19.9, 7000:19.7, 8000:19.4, 9000:19.1, 10000:18.9, 11000:18.7, 12000:18.4, 13000:"FT", 14000:null },
+          2300: { 0:21.1, 1000:20.8, 2000:20.5, 3000:20.2, 4000:20.0, 5000:19.7, 6000:19.4, 7000:19.2, 8000:18.9, 9000:18.7, 10000:18.4, 11000:18.2, 12000:18.0, 13000:"FT", 14000:null },
+          2400: { 0:20.6, 1000:20.3, 2000:20.0, 3000:19.8, 4000:19.5, 5000:19.2, 6000:19.0, 7000:18.7, 8000:18.5, 9000:18.2, 10000:18.0, 11000:17.8, 12000:17.6, 13000:17.4, 14000:"FT" },
+        },
+      },
+      65: {
+        bhp: 117, gph: 10.2,
+        rpms: [2100, 2200, 2300, 2400],
+        data: {
+          2100: { 0:24.9, 1000:24.6, 2000:24.2, 3000:23.9, 4000:23.5, 5000:23.2, 6000:22.9, 7000:"FT", 8000:null, 9000:null, 10000:null },
+          2200: { 0:24.2, 1000:23.8, 2000:23.5, 3000:23.2, 4000:22.8, 5000:22.5, 6000:22.2, 7000:21.9, 8000:"FT", 9000:null, 10000:null },
+          2300: { 0:23.5, 1000:23.2, 2000:22.9, 3000:22.6, 4000:22.3, 5000:22.0, 6000:21.7, 7000:21.5, 8000:21.2, 9000:"FT", 10000:null },
+          2400: { 0:22.9, 1000:22.6, 2000:22.3, 3000:22.0, 4000:21.8, 5000:21.5, 6000:21.3, 7000:21.0, 8000:20.8, 9000:20.6, 10000:"FT" },
+        },
+      },
+      75: {
+        bhp: 135, gph: 11.7,
+        rpms: [2200, 2300, 2400, 2500],
+        data: {
+          2200: { 0:26.7, 1000:26.3, 2000:25.9, 3000:25.6, 4000:"FT", 5000:null, 6000:null, 7000:null },
+          2300: { 0:26.0, 1000:25.6, 2000:25.3, 3000:25.0, 4000:24.7, 5000:"FT", 6000:null, 7000:null },
+          2400: { 0:25.2, 1000:24.9, 2000:24.6, 3000:24.4, 4000:24.1, 5000:23.8, 6000:"FT", 7000:null },
+          2500: { 0:24.6, 1000:24.3, 2000:24.0, 3000:23.7, 4000:23.5, 5000:23.2, 6000:22.9, 7000:"FT" },
+        },
+      },
+    };
+
+    function calculateSemCruise(altFt, oatC, pct, rpm) {
+      const cfg = semCruiseTable[pct];
+      if (!cfg) return null;
+      if (!cfg.data[rpm]) return null;
+
+      const altKeys = Object.keys(cfg.data[rpm]).map(Number).sort((a,b) => a-b);
+      const clampedAlt = Math.max(altKeys[0], Math.min(altKeys[altKeys.length-1], altFt));
+
+      // Find bracketing altitudes
+      let loAlt = altKeys[0], hiAlt = altKeys[0];
+      for (let i = 0; i < altKeys.length - 1; i++) {
+        if (clampedAlt >= altKeys[i] && clampedAlt <= altKeys[i+1]) {
+          loAlt = altKeys[i]; hiAlt = altKeys[i+1]; break;
+        }
+      }
+
+      const loVal = cfg.data[rpm][loAlt];
+      const hiVal = cfg.data[rpm][hiAlt];
+
+      // If either bracket is null, not achievable
+      if (loVal === null || hiVal === null) return { available: false };
+
+      // If either is FT, return FT
+      if (loVal === "FT" || hiVal === "FT") {
+        return { available: true, fullThrottle: true, map: null, mapAdj: null, gph: cfg.gph, bhp: cfg.bhp };
+      }
+
+      // Interpolate MAP
+      const t = loAlt === hiAlt ? 0 : (clampedAlt - loAlt) / (hiAlt - loAlt);
+      const map = loVal + t * (hiVal - loVal);
+
+      // ISA correction: +1% MAP per 8°C above ISA, -1% per 8°C below
+      const isaTemp = getISATemp(altFt);
+      const isaDev = oatC - isaTemp;
+      const mapAdj = map * (1 + (isaDev / 8) * 0.01);
+
+      return {
+        available: true,
+        fullThrottle: false,
+        map: Math.round(map * 10) / 10,
+        mapAdj: Math.round(mapAdj * 10) / 10,
+        gph: cfg.gph,
+        bhp: cfg.bhp,
+        isaDeviation: isaDev,
+        isaTemp,
+      };
+    }
+
+    function SeminoleCruiseTab({ savedState, onStateChange }) {
+      const C = useC();
+      const [alt, setAlt] = useState(savedState.alt || "");
+      const [oat, setOat] = useState(savedState.oat || "");
+      const [tempUnit, setTempUnit] = useState(savedState.tempUnit || "C");
+      const [power, setPower] = useState(savedState.power || "65");
+      const [rpm, setRpm] = useState(savedState.rpm || "2300");
+      const [mixture, setMixture] = useState(savedState.mixture || "perf");
+      const [result, setResult] = useState(null);
+      const [error, setError] = useState("");
+
+      // Valid RPMs for selected power
+      const validRpms = semCruiseTable[power].rpms;
+
+      // If current RPM not valid for new power, reset to middle option
+      useEffect(() => {
+        if (!validRpms.includes(parseInt(rpm))) {
+          setRpm(String(validRpms[Math.floor(validRpms.length / 2)]));
+        }
+      }, [power]);
+
+      useEffect(() => {
+        onStateChange({ alt, oat, tempUnit, power, rpm, mixture });
+      }, [alt, oat, tempUnit, power, rpm, mixture]);
+
+      const handleCalculate = useCallback(() => {
+        setError(""); setResult(null);
+        const altVal = parseFloat(alt);
+        let oatC = parseFloat(oat);
+        if (isNaN(altVal) || isNaN(oatC)) { setError("Please fill in altitude and OAT."); return; }
+        if (tempUnit === "F") oatC = (oatC - 32) * 5 / 9;
+        if (altVal < 0 || altVal > 14000) { setError("Altitude must be 0 – 14,000 ft."); return; }
+        const res = calculateSemCruise(altVal, oatC, parseInt(power), parseInt(rpm));
+        if (!res || !res.available) { setError("This power setting is not achievable at this altitude and RPM."); setResult(null); return; }
+        const tas = getSemTAS(parseInt(power), altVal, oatC, mixture);
+        const gph = mixture === "perf" ? semCruiseTable[power].gph : { 55: 14.0/2, 65: 16.6/2, 75: 19.2/2 }[power];
+        setResult({ ...res, altVal, oatC, power, rpm: parseInt(rpm), mixture, tas, gph });
+      }, [alt, oat, tempUnit, power, rpm, mixture]);
+
+      useEffect(() => { if (result && alt && oat) handleCalculate(); }, [power, rpm, mixture]);
+
+      const cfg = semCruiseTable[power];
+      const altHints = { 55: "0 – 14,000 ft", 65: "0 – 10,000 ft", 75: "0 – 7,000 ft" };
+
+      return (
+        <Card>
+          <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: "1px solid " + C.border }}>
+            <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.green, marginBottom: "4px" }}>FUEL & POWER SETTING</div>
+            <div style={{ fontSize: "13px", color: C.dimmer, letterSpacing: "1px" }}>BOTH ENGINES · FIG 5-25</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "24px" }}>
+            <ToggleRow label="POWER SETTING" value={power} onChange={setPower}
+              options={[{ val: "75", label: "75% POWER" }, { val: "65", label: "65% POWER" }, { val: "55", label: "55% POWER" }]} />
+            <ToggleRow label="MIXTURE" value={mixture} onChange={setMixture}
+              options={[{ val: "perf", label: "PERFORMANCE" }, { val: "econ", label: "ECONOMY" }]} />
+            <ToggleRow label="RPM" value={rpm} onChange={setRpm}
+              options={validRpms.map(r => ({ val: String(r), label: String(r) }))} />
+            <AltOATRow altLabel="CRUISE PRESS. ALT." altValue={alt} onAltChange={setAlt} altHint={altHints[power]} altPlaceholder="e.g. 6000" oatValue={oat} onOatChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} />
+          </div>
+          {error && <ErrorBox msg={error} />}
+          <CalcButton onClick={handleCalculate} />
+          {result && (
+            <div style={{ marginTop: "28px" }}>
+              <ISABadgeRow label="RESULTS" isaLabel={formatISA(result.isaDeviation)} isaDeviation={result.isaDeviation} isaTemp={result.isaTemp} />
+              {result.fullThrottle ? (
+                <div style={{ background: C.input, border: "1px solid " + C.warm, borderRadius: "3px", padding: "16px", textAlign: "center", marginBottom: "12px" }}>
+                  <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.warm, marginBottom: "6px" }}>FULL THROTTLE</div>
+                  <div style={{ fontSize: "12px", color: C.note, letterSpacing: "1px" }}>Open throttle fully to achieve {power}% power at this altitude and RPM.</div>
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "12px" }}>
+                  <div style={{ background: C.input, border: "1px solid " + C.green, borderRadius: "3px", padding: "16px", textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>MAN. PRESSURE</div>
+                    <div style={{ fontSize: "36px", fontWeight: "bold", color: C.text, lineHeight: 1 }}>{result.mapAdj}</div>
+                    <div style={{ fontSize: "11px", color: C.dim, marginTop: "4px", letterSpacing: "1px" }}>IN. HG</div>
+                  </div>
+                  <div style={{ background: C.input, border: "1px solid " + C.cool, borderRadius: "3px", padding: "16px", textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>TRUE AIRSPEED</div>
+                    <div style={{ fontSize: "36px", fontWeight: "bold", color: C.cool, lineHeight: 1 }}>{result.tas}</div>
+                    <div style={{ fontSize: "11px", color: C.dim, marginTop: "4px", letterSpacing: "1px" }}>KTAS</div>
+                  </div>
+                  <div style={{ background: C.input, border: "1px solid " + C.borderDim, borderRadius: "3px", padding: "16px", textAlign: "center" }}>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>FUEL FLOW</div>
+                    <div style={{ fontSize: "36px", fontWeight: "bold", color: C.text, lineHeight: 1 }}>{result.gph}</div>
+                    <div style={{ fontSize: "11px", color: C.dim, marginTop: "4px", letterSpacing: "1px" }}>GPH PER ENGINE</div>
+                  </div>
+                </div>
+              )}
+              {/* Range & Endurance table */}
+              <div style={{ background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "12px 14px", marginTop: "12px" }}>
+                <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.green, marginBottom: "10px" }}>
+                  ENDURANCE & RANGE · 45 MIN RESERVE · {result.mixture === "perf" ? "PERF CRUISE" : "ECON CRUISE"}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "6px", marginBottom: "6px" }}>
+                  {["POWER","GPH/ENG","ENDURANCE","RANGE"].map(h => (
+                    <div key={h} style={{ fontSize: "12px", color: C.dimmer, letterSpacing: "1px", textAlign: "center" }}>{h}</div>
+                  ))}
+                </div>
+                {[75, 65, 55].map(pct => {
+                  const isActive = String(pct) === result.power;
+                  const re = getSemRangeEndurance(result.altVal, pct, result.mixture);
+                  const gph = result.mixture === "perf" ? semPerfGPH[pct] : semEconGPH[pct];
+                  return (
+                    <div key={pct} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "6px", marginBottom: "4px", background: isActive ? "rgba(90,138,106,0.12)" : "transparent", borderRadius: "2px", padding: "4px 2px", borderLeft: isActive ? `2px solid ${C.green}` : "2px solid transparent" }}>
+                      <div style={{ fontSize: "15px", color: isActive ? C.green : C.dim, textAlign: "center", fontWeight: isActive ? "bold" : "normal" }}>{pct}%</div>
+                      <div style={{ fontSize: "15px", color: isActive ? C.dim : C.dimmest, textAlign: "center" }}>{gph.toFixed(1)}</div>
+                      <div style={{ fontSize: "15px", color: isActive ? C.text : C.dim, textAlign: "center" }}>{re.endurance.toFixed(2)} hrs</div>
+                      <div style={{ fontSize: "15px", color: isActive ? C.text : C.dim, textAlign: "center" }}>{re.range} nm</div>
+                    </div>
+                  );
+                })}
+                <div style={{ fontSize: "12px", color: C.dimmest, marginTop: "8px", letterSpacing: "1px" }}>
+                  108 gal usable · 3800 lbs · std temp · 45 min reserve · Fig 5-29
+                </div>
+              </div>
+              <NoteBox text={"MAP ISA-adjusted: +1% per 8°C above ISA, -1% per 8°C below. " + (result.mixture === "perf" ? "Performance cruise: mixture leaned to 125° rich of peak EGT." : "Economy cruise: mixture leaned to peak EGT.") + " TAS from Fig 5-27. Always verify against official POH."} />
+            </div>
+          )}
+        </Card>
+      );
+    }
+
+    const semRangeData = {
+      perf: {
+        75: [[0,574],[4000,594],[7000,611]],
+        65: [[0,633],[4000,655],[8000,678],[10000,686]],
+        55: [[0,710],[4000,732],[8000,754],[10500,768],[13000,773]],
+      },
+      econ: {
+        75: [[0,715],[4000,735],[7000,750]],
+        65: [[0,796],[6000,825],[9200,840],[10000,842]],
+        55: [[0,895],[6000,924],[11600,940],[13000,940]],
+      },
+    };
+    const semEnduranceData = {
+      perf: {
+        75: [[0,3.77],[7000,3.8]],
+        65: [[0,4.43],[10000,4.4]],
+        55: [[0,5.3],[6000,5.25],[10000,5.2],[13000,5.15]],
+      },
+      econ: {
+        75: [[0,4.75],[6950,4.7]],
+        65: [[0,5.6],[2000,5.56],[6000,5.54],[8600,5.5],[9990,5.48]],
+        55: [[0,6.78],[6000,6.65],[10000,6.51],[12000,6.45],[13000,6.4]],
+      },
+    };
+    const semPerfGPH = { 75: 11.7, 65: 10.2, 55: 8.7 };
+    const semEconGPH = { 75: 19.2/2, 65: 16.6/2, 55: 14.0/2 };
+
+    function getSemRangeEndurance(altFt, pct, mixture) {
+      const range = toInterpList(semRangeData[mixture][pct], altFt);
+      const endurance = toInterpList(semEnduranceData[mixture][pct], altFt);
+      return { range: Math.round(range), endurance: Math.round(endurance * 100) / 100 };
+    }
 
     const semClimbOEIData = {
       3800: {
@@ -6408,7 +6715,7 @@ null}
       const [activeTab, setActiveTab] = useState("takeoff");
       const [tabStates, setTabStates] = useState({});
       function saveTabState(id, state) { setTabStates(function(prev) { var n = {}; Object.keys(prev).forEach(function(k) { n[k] = prev[k]; }); n[id] = state; return n; }); }
-      var tabs = [{ id: "takeoff", label: "TAKEOFF", fig: "5-13/15" }, { id: "climb", label: "CLIMB", fig: "5-17/19" }];
+      var tabs = [{ id: "takeoff", label: "TAKEOFF", fig: "5-13/15" }, { id: "climb", label: "CLIMB", fig: "5-17/19/21" }, { id: "cruise", label: "CRUISE", fig: "5-25" }];
       function tabProps(id) { return { savedState: tabStates[id] || {}, onStateChange: function(s) { saveTabState(id, s); } }; }
       return (
         <MobileContext.Provider value={mobile}>
@@ -6445,6 +6752,7 @@ null}
             <div style={{ width: "100%", maxWidth: "860px" }}>
               {activeTab === "takeoff" ? React.createElement(SeminoleTakeoffTab, tabProps("takeoff")) : null}
               {activeTab === "climb" ? React.createElement(SeminoleClimbTab, tabProps("climb")) : null}
+              {activeTab === "cruise" ? React.createElement(SeminoleCruiseTab, tabProps("cruise")) : null}
             </div>
             <div style={{ marginTop: "24px", fontSize: "12px", color: C.dim, letterSpacing: "2px" }}>PA-44-180 SEMINOLE - REPORT VB-2636 - ISSUED NOV 2016</div>
           </div>
