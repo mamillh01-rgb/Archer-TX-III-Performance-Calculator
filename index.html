@@ -5335,7 +5335,9 @@ null}
 
       // If either is FT, return FT
       if (loVal === "FT" || hiVal === "FT") {
-        return { available: true, fullThrottle: true, map: null, mapAdj: null, gph: cfg.gph, bhp: cfg.bhp };
+        const isaTemp = getISATemp(altFt);
+        const isaDev = oatC - isaTemp;
+        return { available: true, fullThrottle: true, map: null, mapAdj: null, gph: cfg.gph, bhp: cfg.bhp, isaDeviation: isaDev, isaTemp };
       }
 
       // Interpolate MAP
@@ -5393,12 +5395,15 @@ null}
         if (altVal < 0 || altVal > 14000) { setError("Altitude must be 0 – 14,000 ft."); return; }
         const res = calculateSemCruise(altVal, oatC, parseInt(power), parseInt(rpm));
         if (!res || !res.available) { setError("This power setting is not achievable at this altitude and RPM."); setResult(null); return; }
-        const tas = getSemTAS(parseInt(power), altVal, oatC, mixture);
+        const tas = res.fullThrottle ? null : getSemTAS(parseInt(power), altVal, oatC, mixture);
         const gph = mixture === "perf" ? semCruiseTable[power].gph : { 55: 14.0/2, 65: 16.6/2, 75: 19.2/2 }[power];
         setResult({ ...res, altVal, oatC, power, rpm: parseInt(rpm), mixture, tas, gph });
       }, [alt, oat, tempUnit, power, rpm, mixture]);
 
-      useEffect(() => { if (result && alt && oat) handleCalculate(); }, [power, rpm, mixture]);
+      useEffect(() => {
+        setResult(null);
+        setError("");
+      }, [power, rpm, mixture]);
 
       const cfg = semCruiseTable[power];
       const altHints = { 55: "0 – 14,000 ft", 65: "0 – 10,000 ft", 75: "0 – 7,000 ft" };
@@ -5437,7 +5442,7 @@ null}
                   </div>
                   <div style={{ background: C.input, border: "1px solid " + C.cool, borderRadius: "3px", padding: "16px", textAlign: "center" }}>
                     <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>TRUE AIRSPEED</div>
-                    <div style={{ fontSize: "36px", fontWeight: "bold", color: C.cool, lineHeight: 1 }}>{result.tas}</div>
+                    <div style={{ fontSize: "36px", fontWeight: "bold", color: C.cool, lineHeight: 1 }}>{result.tas != null ? result.tas : "—"}</div>
                     <div style={{ fontSize: "11px", color: C.dim, marginTop: "4px", letterSpacing: "1px" }}>KTAS</div>
                   </div>
                   <div style={{ background: C.input, border: "1px solid " + C.borderDim, borderRadius: "3px", padding: "16px", textAlign: "center" }}>
@@ -5464,9 +5469,9 @@ null}
                   return (
                     <div key={pct} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "6px", marginBottom: "4px", background: isActive ? "rgba(90,138,106,0.12)" : "transparent", borderRadius: "2px", padding: "4px 2px", borderLeft: isActive ? `2px solid ${C.green}` : "2px solid transparent" }}>
                       <div style={{ fontSize: "15px", color: isActive ? C.green : C.dim, textAlign: "center", fontWeight: isActive ? "bold" : "normal" }}>{pct}%</div>
-                      <div style={{ fontSize: "15px", color: isActive ? C.dim : C.dimmest, textAlign: "center" }}>{gph.toFixed(1)}</div>
-                      <div style={{ fontSize: "15px", color: isActive ? C.text : C.dim, textAlign: "center" }}>{re.endurance.toFixed(2)} hrs</div>
-                      <div style={{ fontSize: "15px", color: isActive ? C.text : C.dim, textAlign: "center" }}>{re.range} nm</div>
+                      <div style={{ fontSize: "15px", color: isActive ? C.dim : C.dimmest, textAlign: "center" }}>{gph != null ? gph.toFixed(1) : "--"}</div>
+                      <div style={{ fontSize: "15px", color: isActive ? C.text : C.dim, textAlign: "center" }}>{re && re.endurance != null ? re.endurance.toFixed(2) + " hrs" : "--"}</div>
+                      <div style={{ fontSize: "15px", color: isActive ? C.text : C.dim, textAlign: "center" }}>{re && re.range != null ? re.range + " nm" : "--"}</div>
                     </div>
                   );
                 })}
@@ -5509,9 +5514,13 @@ null}
     const semEconGPH = { 75: 19.2/2, 65: 16.6/2, 55: 14.0/2 };
 
     function getSemRangeEndurance(altFt, pct, mixture) {
-      const range = toInterpList(semRangeData[mixture][pct], altFt);
-      const endurance = toInterpList(semEnduranceData[mixture][pct], altFt);
-      return { range: Math.round(range), endurance: Math.round(endurance * 100) / 100 };
+      try {
+        const range = toInterpList(semRangeData[mixture][pct], altFt);
+        const endurance = toInterpList(semEnduranceData[mixture][pct], altFt);
+        return { range: Math.round(range), endurance: Math.round(endurance * 100) / 100 };
+      } catch(e) {
+        return { range: null, endurance: null };
+      }
     }
 
     const semClimbOEIData = {
