@@ -5205,6 +5205,129 @@ null}
       3000: [[-30,1975], [0,3000], [10,3000]],
     };
 
+    // Fig 5-23: Fuel, Time and Distance To Climb - Seminole
+
+    const semTFDFuel = {
+      0:     [[0,0]],
+      2000:  [[-40,.2],[-2,.6],[20,.9],[38,1],[46,1.1]],
+      4000:  [[-40,1],[-20,1.3],[20,2],[34,2.5],[41.5,2.7]],
+      6000:  [[-40,2],[-20,2.3],[8,3.1],[34,4.2],[40,4.6]],
+      8000:  [[-40,3],[0,4.4],[20,5.4],[32,6.2],[40,7]],
+      10000: [[-40,4.3],[-16,5.35],[8,6.8],[26,8.2],[34,9.4],[38,10.5]],
+      12000: [[-40,6],[-20,7],[0,8.8],[12.1,10.5]],
+      14000: [[-40,8],[-26,9],[-14.8,10.5]],
+    };
+    const semTFDTime = {
+      0:     [[0,0]],
+      2000:  [[-40,1],[-20,1.1],[0,1.3],[36,2],[46,2.2]],
+      4000:  [[-40,2],[-20,2.4],[20,3.65],[34,4.3],[41.5,4.95]],
+      6000:  [[-40,3.4],[-20,4],[10,5.75],[34,7.8],[40,8.5]],
+      8000:  [[-40,5.2],[-20,6.5],[0,8],[20,10.2],[32,12],[40,13.9]],
+      10000: [[-40,7.9],[-20,9.6],[0,12],[22,16],[34,19.4],[38,21.3]],
+      12000: [[-40,11.3],[-20,14],[0,18],[12,21.2]],
+      14000: [[-40,16.1],[-26,18.5],[-14.8,21.3]],
+    };
+    const semTFDDist = {
+      0:     [[0,0]],
+      2000:  [[-40,1.6],[-20,1.9],[0,2.2],[36,3.1],[46,3.7]],
+      4000:  [[-40,3.3],[-20,4],[20,6],[34,7],[41.5,8]],
+      6000:  [[-40,5.65],[-20,6.8],[10,9.4],[34,12.6],[40,14]],
+      8000:  [[-40,9.6],[-20,10.6],[0,13.2],[20,16.8],[32,19.8],[40,22.8]],
+      10000: [[-40,12.7],[-20,15.8],[0,20],[22,26.5],[34,32.8],[38,37]],
+      12000: [[-40,18.7],[-20,23],[0,30],[12,36.8]],
+      14000: [[-40,26.9],[-26,31.4],[-14.8,36.8]],
+    };
+    const semTFDAlts = [0,2000,4000,6000,8000,10000,12000,14000];
+
+    function semTFDInterp(data, altFt, oatC) {
+      const clamped = Math.max(0, Math.min(14000, altFt));
+      for (let i = 0; i < semTFDAlts.length-1; i++) {
+        if (clamped >= semTFDAlts[i] && clamped <= semTFDAlts[i+1]) {
+          const lo = toInterpList(data[semTFDAlts[i]], oatC);
+          const hi = toInterpList(data[semTFDAlts[i+1]], oatC);
+          const t = (clamped - semTFDAlts[i]) / (semTFDAlts[i+1] - semTFDAlts[i]);
+          return lo + t*(hi-lo);
+        }
+      }
+      return toInterpList(data[semTFDAlts[semTFDAlts.length-1]], oatC);
+    }
+
+    function calculateSemTFD(depAlt, cruiseAlt, depOAT, cruiseOAT) {
+      const fuelCruise = semTFDInterp(semTFDFuel, cruiseAlt, cruiseOAT);
+      const fuelDep    = semTFDInterp(semTFDFuel, depAlt, depOAT);
+      const timeCruise = semTFDInterp(semTFDTime, cruiseAlt, cruiseOAT);
+      const timeDep    = semTFDInterp(semTFDTime, depAlt, depOAT);
+      const distCruise = semTFDInterp(semTFDDist, cruiseAlt, cruiseOAT);
+      const distDep    = semTFDInterp(semTFDDist, depAlt, depOAT);
+      return {
+        fuelGal: Math.round((fuelCruise - fuelDep)*10)/10,
+        timeMin: Math.round((timeCruise - timeDep)*10)/10,
+        distNM:  Math.round((distCruise - distDep)*10)/10,
+        isaDevDep: getISADeviation(depAlt, depOAT),
+        isaTempDep: getISATemp(depAlt),
+        isaDevCruise: getISADeviation(cruiseAlt, cruiseOAT),
+        isaTempCruise: getISATemp(cruiseAlt),
+      };
+    }
+
+    function SeminoleTFDTab({ savedState, onStateChange }) {
+      const C = useC();
+      const [departAlt, setDepartAlt] = useState(savedState.departAlt || "");
+      const [cruiseAlt, setCruiseAlt] = useState(savedState.cruiseAlt || "");
+      const [oatDep, setOatDep] = useState(savedState.oatDep || "");
+      const [oatCruise, setOatCruise] = useState(savedState.oatCruise || "");
+      const [tempUnit, setTempUnit] = useState(savedState.tempUnit || "C");
+      const [result, setResult] = useState(savedState.result || null);
+      const [error, setError] = useState("");
+
+      useEffect(() => {
+        onStateChange({ departAlt, cruiseAlt, oatDep, oatCruise, tempUnit, result });
+      }, [departAlt, cruiseAlt, oatDep, oatCruise, tempUnit, result]);
+
+      const handleCalculate = useCallback(() => {
+        setError(""); setResult(null);
+        const dep = parseFloat(departAlt), cruise = parseFloat(cruiseAlt);
+        let oatDepC = parseFloat(oatDep), oatCruiseC = parseFloat(oatCruise);
+        if (isNaN(dep) || isNaN(cruise) || isNaN(oatDepC) || isNaN(oatCruiseC)) { setError("Please fill in all fields."); return; }
+        if (tempUnit === "F") { oatDepC = (oatDepC-32)*5/9; oatCruiseC = (oatCruiseC-32)*5/9; }
+        if (dep >= cruise) { setError("Cruise altitude must be above departure altitude."); return; }
+        if (dep < 0 || cruise > 14000) { setError("Altitudes must be between 0 and 14,000 ft."); return; }
+        setResult(calculateSemTFD(dep, cruise, oatDepC, oatCruiseC));
+      }, [departAlt, cruiseAlt, oatDep, oatCruise, tempUnit]);
+
+      return (
+        <Card>
+          <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: "1px solid " + C.border }}>
+            <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.green, marginBottom: "4px" }}>TIME, FUEL & DISTANCE TO CLIMB</div>
+            <div style={{ fontSize: "13px", color: C.dimmer, letterSpacing: "1px" }}>GEAR UP · 88 KIAS · 2700 RPM · FULL THROTTLE · FIG 5-23</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "24px" }}>
+            <AltOATRow altLabel="DEPARTURE ALT." altValue={departAlt} onAltChange={setDepartAlt} altHint="0 – 14,000 ft" altPlaceholder="e.g. 1250" oatValue={oatDep} onOatChange={setOatDep} unit={tempUnit} onUnitChange={setTempUnit} altFilled={false} oatFilled={false} />
+            <AltOATRow altLabel="CRUISE ALT." altValue={cruiseAlt} onAltChange={setCruiseAlt} altHint="Above departure" altPlaceholder="e.g. 5500" oatValue={oatCruise} onOatChange={setOatCruise} unit={tempUnit} onUnitChange={setTempUnit} altFilled={false} oatFilled={false} />
+          </div>
+          {error && <ErrorBox msg={error} />}
+          <CalcButton onClick={handleCalculate} />
+          {result && (
+            <div style={{ marginTop: "28px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green }}>RESULTS</div>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevDep > 5 ? C.warm : result.isaDevDep < -5 ? C.cool : C.dim, background: C.input, border: "1px solid " + C.border, padding: "3px 8px", borderRadius: "2px" }}>DEP {formatISA(result.isaDevDep)}</div>
+                  <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevCruise > 5 ? C.warm : result.isaDevCruise < -5 ? C.cool : C.dim, background: C.input, border: "1px solid " + C.border, padding: "3px 8px", borderRadius: "2px" }}>CRZ {formatISA(result.isaDevCruise)}</div>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "12px" }}>
+                <ResultCard label="TIME" value={result.timeMin.toFixed(1)} unit="MIN" color={C.green} />
+                <ResultCard label="FUEL" value={result.fuelGal.toFixed(1)} unit="GAL" color={C.green} />
+                <ResultCard label="DIST" value={result.distNM.toFixed(1)} unit="NM" color={C.green} />
+              </div>
+              <NoteBox text="Fuel, time and distance from SL reference, values subtracted for departure altitude. Gear up, 88 KIAS, 2700 RPM full throttle, cowl flaps open. Always verify against official POH." />
+            </div>
+          )}
+        </Card>
+      );
+    }
+
     // Fig 5-27: Speed Power - TAS data
 
     const semTASPerf = {
@@ -6724,7 +6847,7 @@ null}
       const [activeTab, setActiveTab] = useState("takeoff");
       const [tabStates, setTabStates] = useState({});
       function saveTabState(id, state) { setTabStates(function(prev) { var n = {}; Object.keys(prev).forEach(function(k) { n[k] = prev[k]; }); n[id] = state; return n; }); }
-      var tabs = [{ id: "takeoff", label: "TAKEOFF", fig: "5-13/15" }, { id: "climb", label: "CLIMB", fig: "5-17/19/21" }, { id: "cruise", label: "CRUISE", fig: "5-25" }];
+      var tabs = [{ id: "takeoff", label: "TAKEOFF", fig: "5-13/15" }, { id: "tfd", label: "CLIMB TFD", fig: "5-23" }, { id: "climb", label: "CLIMB", fig: "5-17/19/21" }, { id: "cruise", label: "CRUISE", fig: "5-25/27" }];
       function tabProps(id) { return { savedState: tabStates[id] || {}, onStateChange: function(s) { saveTabState(id, s); } }; }
       return (
         <MobileContext.Provider value={mobile}>
@@ -6760,6 +6883,7 @@ null}
             </div>
             <div style={{ width: "100%", maxWidth: "860px" }}>
               {activeTab === "takeoff" ? React.createElement(SeminoleTakeoffTab, tabProps("takeoff")) : null}
+              {activeTab === "tfd" ? React.createElement(SeminoleTFDTab, tabProps("tfd")) : null}
               {activeTab === "climb" ? React.createElement(SeminoleClimbTab, tabProps("climb")) : null}
               {activeTab === "cruise" ? React.createElement(SeminoleCruiseTab, tabProps("cruise")) : null}
             </div>
