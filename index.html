@@ -37,7 +37,10 @@
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     input[type=number] { -moz-appearance: textfield; }
-    input:focus { outline: 1px solid #5a8a6a !important; }
+    input:focus { outline: 2px solid #5a8a6a !important; }
+    body.light-mode input:focus { outline: 2px solid #1a7a3a !important; }
+    body.light-mode { -webkit-font-smoothing: antialiased; }
+    body.light-mode svg line, body.light-mode svg path, body.light-mode svg polyline { stroke-width: 1.5 !important; }
     @keyframes dotPulse {
       0%, 100% { opacity: 0.2; transform: scale(0.8); }
       50% { opacity: 1; transform: scale(1.2); }
@@ -383,7 +386,11 @@
 
     function useC() {
       const theme = React.useContext(ThemeContext);
-      return THEMES[theme] || THEMES.dark;
+      var c = THEMES[theme] || THEMES.dark;
+      c.isLight = theme === "light";
+      c.stroke = theme === "light" ? "1.5px" : "1px";
+      c.cardBorder = theme === "light" ? "1.5px" : "1px";
+      return c;
     }
     const mono = "'Courier New', monospace";
     function formatISA(dev) {
@@ -406,15 +413,17 @@
       rwyBg: "#080c06", rwyAsphalt: "#2a3a1a", rwyStripe: "#3a4a2a", rwyText: "#4a6a3a", markerBg: "#060a0f",
       },
       light: {
-      bg: "#dde4dd", card: "#eef3ee", input: "#f5f8f5",
-      border: "#7a9a7a", borderDim: "#9ab49a",
-      green: "#0a3a18", text: "#0f1f0f",
-      dim: "#1a3a1a", dimmer: "#2a4a2a", dimmest: "#3a5a3a",
-      note: "#0a3a18",
-      error: "#aa2222", errorBg: "#f0e0e0", errorBorder: "#cc8888",
-      warm: "#b05a00", cool: "#0a3a70",
+      bg: "#f0f2f5", card: "#ffffff", input: "#edf0f5",
+      border: "#9da8b8", borderDim: "#c8d0da",
+      green: "#1a7a3a", text: "#111827",
+      dim: "#374151", dimmer: "#4b5563", dimmest: "#6b7280",
+      surface: "#f5f7fa",
+      note: "#1a5a2a",
+      error: "#cc2222", errorBg: "#fef2f2", errorBorder: "#fca5a5",
+      warm: "#b45309", cool: "#1d4ed8",
       btnText: "#ffffff",
-      rwyBg: "#c8d8c0", rwyAsphalt: "#3a5a2a", rwyStripe: "#4a6a30", rwyText: "#f0f4e0", markerBg: "#eef3ee",
+      label: "#111827",
+      rwyBg: "#c8d4e0", rwyAsphalt: "#1e2a38", rwyStripe: "#e8ecf0", rwyText: "#f9fafb", markerBg: "#ffffff",
       },
     };
     function Grid2({ children, style }) {
@@ -430,23 +439,23 @@
     function Card({ children }) {
       const C = useC();
       const mobile = React.useContext(MobileContext);
-      return <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: "4px", padding: mobile ? "16px" : "32px", boxShadow: "0 0 80px rgba(90,138,106,0.10)" }}>{children}</div>;
+      return <div style={{ background: C.card, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "4px", padding: mobile ? "16px" : "32px", boxShadow: C.isLight ? "0 2px 12px rgba(0,0,0,0.10)" : "0 0 80px rgba(90,138,106,0.10)" }}>{children}</div>;
     }
     function TempField({ value, onChange, unit, onUnitChange, label = "OAT AT DEPARTURE", hint = "−25°C to 50°C chart range", filled = false }) {
       const C = useC();
       return (
       <div>
-      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green, marginBottom: "8px", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "8px" }}>
+      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "8px" }}>
       {label}
       {filled && <span style={{ fontSize: "11px", background: C.green, color: C.btnText, borderRadius: "3px", padding: "2px 6px", letterSpacing: "1px", fontWeight: "bold" }}>✓ METAR</span>}
       </div>
       <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
       <input type="number" value={value} onChange={e => onChange(e.target.value)} placeholder="e.g. 23"
-      style={{ flex: 1, background: C.input, border: `1px solid ${filled ? C.green : C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      style={{ flex: 1, background: C.input, border: `2px solid ${filled ? C.green : C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       {["C", "F"].map(u => (
       <button key={u} onClick={() => onUnitChange(u)} style={{
       padding: "11px 15px", background: unit === u ? C.green : C.input,
-      border: `1px solid ${unit === u ? C.green : C.border}`, borderRadius: "3px",
+      border: `2px solid ${unit === u ? C.green : C.border}`, borderRadius: "3px",
       color: unit === u ? "#fff" : C.dim, fontFamily: mono, fontSize: "18px", cursor: "pointer",
       }}>°{u}</button>
       ))}
@@ -459,16 +468,16 @@
       const C = useC();
       return (
       <div>
-      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green, marginBottom: "8px", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "8px" }}>
+      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "8px" }}>
       {label}
       {filled && <span style={{ fontSize: "11px", background: C.green, color: C.btnText, borderRadius: "3px", padding: "2px 6px", letterSpacing: "1px", fontWeight: "bold" }}>✓ METAR</span>}
       </div>
       <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
       <input type="number" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-      style={{ flex: 1, background: C.input, border: `1px solid ${filled ? C.green : C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
-      <div style={{ padding: "11px 14px", background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", color: C.dim, fontSize: "15px", minWidth: "44px", textAlign: "center" }}>{unit}</div>
+      style={{ flex: 1, background: C.input, border: `2px solid ${filled ? C.green : C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      <div style={{ padding: "11px 14px", background: C.input, border: `2px solid ${C.border}`, borderRadius: "3px", color: C.dim, fontSize: "15px", minWidth: "44px", textAlign: "center" }}>{unit}</div>
       </div>
-      {hint && <div style={{ fontSize: "13px", color: C.dimmest, marginTop: "5px", letterSpacing: "1px" }}>{hint}</div>}
+      {hint && <div style={{ fontSize: "13px", color: C.isLight ? C.dimmer : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "5px", letterSpacing: "1px" }}>{hint}</div>}
       </div>
       );
     }
@@ -476,32 +485,32 @@
       const C = useC();
       const mobile = useIsMobileInner();
       return (
-      <div style={{ background: C.input, border: `1px solid ${C.border}`, borderRadius: "4px", overflow: "hidden" }}>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "4px", overflow: "hidden" }}>
       <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr" }}>
-      <div style={{ padding: "12px 14px", borderRight: mobile ? "none" : `1px solid ${C.borderDim}`, borderBottom: mobile ? `1px solid ${C.borderDim}` : "none" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
+      <div style={{ padding: "12px 14px", borderRight: mobile ? "none" : `${C.cardBorder} solid ${C.borderDim}`, borderBottom: mobile ? `${C.cardBorder} solid ${C.borderDim}` : "none" }}>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
       {altLabel}
       {altFilled && <span style={{ fontSize: "10px", background: C.green, color: C.btnText, borderRadius: "2px", padding: "1px 5px", letterSpacing: "1px", fontWeight: "bold" }}>METAR</span>}
       </div>
       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
       <input type="number" value={altValue} onChange={e => onAltChange(e.target.value)} placeholder={altPlaceholder || "e.g. 4000"}
-      style={{ flex: 1, minWidth: 0, background: C.bg, border: `1px solid ${altFilled ? C.green : C.borderDim}`, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
-      <div style={{ padding: "10px 8px", background: C.bg, border: `1px solid ${C.borderDim}`, borderRadius: "3px", color: C.dim, fontSize: "11px", letterSpacing: "1px", flexShrink: 0 }}>FT</div>
+      style={{ flex: 1, minWidth: 0, background: C.isLight ? "#fff" : C.bg, border: `${C.cardBorder} solid ${altFilled ? C.green : C.border}`, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      <div style={{ padding: "10px 8px", background: C.isLight ? "#fff" : C.bg, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", color: C.dim, fontSize: "11px", letterSpacing: "1px", flexShrink: 0 }}>FT</div>
       </div>
-      {altHint && <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "4px" }}>{altHint}</div>}
+      {altHint && <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "4px" }}>{altHint}</div>}
       </div>
       <div style={{ padding: "12px 14px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
       OAT
       {oatFilled && <span style={{ fontSize: "10px", background: C.green, color: C.btnText, borderRadius: "2px", padding: "1px 5px", letterSpacing: "1px", fontWeight: "bold" }}>METAR</span>}
       </div>
       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
       <input type="number" value={oatValue} onChange={e => onOatChange(e.target.value)} placeholder="e.g. 15"
-      style={{ flex: 1, minWidth: 0, background: C.bg, border: `1px solid ${oatFilled ? C.green : C.borderDim}`, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      style={{ flex: 1, minWidth: 0, background: C.isLight ? "#fff" : C.bg, border: `${C.cardBorder} solid ${oatFilled ? C.green : C.border}`, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       {["C","F"].map(u => (
       <button key={u} onClick={() => onUnitChange(u)} style={{
-      padding: "10px 10px", background: unit === u ? C.green : C.bg, flexShrink: 0,
-      border: `1px solid ${unit === u ? C.green : C.borderDim}`, borderRadius: "3px",
+      padding: "10px 10px", background: unit === u ? C.green : (C.isLight ? "#fff" : C.bg), flexShrink: 0,
+      border: `${C.cardBorder} solid ${unit === u ? C.green : C.border}`, borderRadius: "3px",
       color: unit === u ? C.btnText : C.dim, fontFamily: mono, fontSize: "13px", cursor: "pointer",
       }}>°{u}</button>
       ))}
@@ -529,8 +538,8 @@
       const C = useC();
       return (
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green }}>{label}</div>
-      <div style={{ fontSize: "13px", letterSpacing: "1px", color: isaDeviation > 5 ? C.warm : isaDeviation < -5 ? C.cool : C.dim, background: C.input, border: `1px solid ${C.border}`, padding: "4px 10px", borderRadius: "2px" }}>
+      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal" }}>{label}</div>
+      <div style={{ fontSize: "13px", letterSpacing: "1px", color: isaDeviation > 5 ? C.warm : isaDeviation < -5 ? C.cool : C.dim, background: C.input, border: `${C.cardBorder} solid ${C.border}`, padding: "4px 10px", borderRadius: "2px" }}>
       {isaLabel} · ISA std {isaTemp.toFixed(1)}°C
       </div>
       </div>
@@ -550,8 +559,8 @@
     function NoteBox({ text }) {
       const C = useC();
       return (
-      <div style={{ marginTop: "12px", padding: "11px 14px", background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", fontSize: "14px", color: C.note, letterSpacing: "0.5px", lineHeight: "1.7" }}>
-      <span style={{ color: C.green, marginRight: "6px" }}>NOTE</span>{text}
+      <div style={{ marginTop: "12px", padding: "11px 14px", background: C.isLight ? "#fff" : C.input, border: `${C.cardBorder} solid ${C.isLight ? C.border : C.borderDim}`, borderRadius: "3px", fontSize: C.isLight ? "13px" : "14px", color: C.isLight ? C.dim : C.note, fontWeight: C.isLight ? "500" : "normal", letterSpacing: "0.5px", lineHeight: "1.7" }}>
+      <span style={{ color: C.green, marginRight: "6px", fontWeight: "700" }}>NOTE</span>{text}
       </div>
       );
     }
@@ -559,7 +568,7 @@
       const C = useC();
       return (
       <div>
-      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green, marginBottom: "8px", textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px", textTransform: "uppercase" }}>{label}</div>
       <div style={{ display: "flex", gap: "8px" }}>
       {options.map(opt => (
       <button key={String(opt.val)} onClick={() => onChange(opt.val)} style={{
@@ -609,8 +618,8 @@
       }, [departAlt, cruiseAlt, destAlt, oatDep, oatCruise, oatDest, tempUnit, showDescent]);
       return (
       <Card>
-      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.green, marginBottom: "10px" }}>CLIMB · FIG 5-17</div>
+      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `${C.cardBorder} solid ${C.border}` }}>
+      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "10px" }}>CLIMB · FIG 5-17</div>
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
       <AltOATRow altLabel="DEPARTURE ALT." altValue={departAlt} onAltChange={setDepartAlt} altHint="0 – 12,000 ft" altPlaceholder="e.g. 800" oatValue={oatDep} onOatChange={setOatDep} unit={tempUnit} onUnitChange={setTempUnit} />
       <AltOATRow altLabel="CRUISE ALT." altValue={cruiseAlt} onAltChange={setCruiseAlt} altHint="Above departure" altPlaceholder="e.g. 6000" oatValue={oatCruise} onOatChange={setOatCruise} unit={tempUnit} onUnitChange={setTempUnit} />
@@ -640,14 +649,14 @@
       {result && (
       <div style={{ marginTop: "28px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green }}>RESULTS</div>
+      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal" }}>RESULTS</div>
       <div style={{ display: "flex", gap: "6px" }}>
-      <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevDep > 5 ? C.warm : result.isaDevDep < -5 ? C.cool : C.dim, background: C.input, border: `1px solid ${C.border}`, padding: "3px 8px", borderRadius: "2px" }}>DEP {formatISA(result.isaDevDep)}</div>
-      <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevCruise > 5 ? C.warm : result.isaDevCruise < -5 ? C.cool : C.dim, background: C.input, border: `1px solid ${C.border}`, padding: "3px 8px", borderRadius: "2px" }}>CRZ {formatISA(result.isaDevCruise)}</div>
+      <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevDep > 5 ? C.warm : result.isaDevDep < -5 ? C.cool : C.dim, background: C.input, border: `${C.cardBorder} solid ${C.border}`, padding: "3px 8px", borderRadius: "2px" }}>DEP {formatISA(result.isaDevDep)}</div>
+      <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevCruise > 5 ? C.warm : result.isaDevCruise < -5 ? C.cool : C.dim, background: C.input, border: `${C.cardBorder} solid ${C.border}`, padding: "3px 8px", borderRadius: "2px" }}>CRZ {formatISA(result.isaDevCruise)}</div>
       </div>
       </div>
       {/* Climb results */}
-      <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.green, marginBottom: "8px" }}>CLIMB · FIG 5-17</div>
+      <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px" }}>CLIMB · FIG 5-17</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "12px" }}>
       <ResultCard label="TIME" value={result.timeMin.toFixed(1)} unit="MIN" color={C.green} />
       <ResultCard label="FUEL" value={result.fuelGal.toFixed(2)} unit="GAL" color={C.green} />
@@ -658,10 +667,10 @@
       const climbHrs = result.timeMin / 60;
       const gph = climbHrs > 0 ? climbFuel / climbHrs : 0;
       return (
-      <div style={{ background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "10px 16px", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "10px 16px", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <div>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "2px" }}>AVG CLIMB FUEL FLOW</div>
-      <div style={{ fontSize: "11px", color: C.dimmest, letterSpacing: "1px" }}>{result.fuelGal.toFixed(2)} gal − 1.2 gal ground = {climbFuel.toFixed(2)} gal ÷ {result.timeMin.toFixed(1)} min</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "2px" }}>AVG CLIMB FUEL FLOW</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "1px" }}>{result.fuelGal.toFixed(2)} gal − 1.2 gal ground = {climbFuel.toFixed(2)} gal ÷ {result.timeMin.toFixed(1)} min</div>
       </div>
       <div style={{ textAlign: "right" }}>
       <span style={{ fontSize: "28px", fontWeight: "bold", color: C.green }}>{gph.toFixed(1)}</span>
@@ -682,10 +691,10 @@
       const desHrs = result.descent.timeMin / 60;
       const gph = desHrs > 0 ? result.descent.fuelGal / desHrs : 0;
       return (
-      <div style={{ background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "10px 16px", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "10px 16px", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <div>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "2px" }}>AVG DESCENT FUEL FLOW</div>
-      <div style={{ fontSize: "11px", color: C.dimmest, letterSpacing: "1px" }}>{result.descent.fuelGal.toFixed(2)} gal ÷ {result.descent.timeMin.toFixed(1)} min</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "2px" }}>AVG DESCENT FUEL FLOW</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "1px" }}>{result.descent.fuelGal.toFixed(2)} gal ÷ {result.descent.timeMin.toFixed(1)} min</div>
       </div>
       <div style={{ textAlign: "right" }}>
       <span style={{ fontSize: "28px", fontWeight: "bold", color: C.cool }}>{gph.toFixed(1)}</span>
@@ -740,12 +749,12 @@
       {result && (
       <div style={{ marginTop: "28px" }}>
       <ISABadgeRow label="RESULTS" isaLabel={formatISA(result.isaDeviation)} isaDeviation={result.isaDeviation} isaTemp={result.isaTemp} />
-      <div style={{ background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "28px", textAlign: "center", marginBottom: "12px" }}>
-      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green, marginBottom: "12px" }}>RATE OF CLIMB</div>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "28px", textAlign: "center", marginBottom: "12px" }}>
+      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "12px" }}>RATE OF CLIMB</div>
       <div style={{ fontSize: "60px", color: rocColor, lineHeight: 1, fontWeight: "bold" }}>{Math.round(result.roc)}</div>
       <div style={{ fontSize: "14px", color: C.dimmer, marginTop: "8px", letterSpacing: "3px" }}>FT / MIN</div>
       </div>
-      <div style={{ background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
       <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.dimmer }}>CLIMB RATE</div>
       <div style={{ fontSize: "15px", letterSpacing: "2px", color: rocColor }}>{rocLabel}</div>
       </div>
@@ -753,31 +762,31 @@
       </div>
       )}
       {/* Gradient checker — always visible */}
-      <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.green, marginBottom: "14px" }}>CLIMB GRADIENT CHECKER</div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "1px", marginBottom: "14px" }}>Convert ft/nm departure procedure gradient to required FPM</div>
+      <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: `${C.cardBorder} solid ${C.border}` }}>
+      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "14px" }}>CLIMB GRADIENT CHECKER</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "1px", marginBottom: "14px" }}>Convert ft/nm departure procedure gradient to required FPM</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "14px" }}>
       <div>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>GRADIENT</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>GRADIENT</div>
       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
       <input type="number" value={gradFtNm} onChange={e => setGradFtNm(e.target.value)} placeholder="e.g. 200"
-      style={{ flex: 1, minWidth: 0, background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
-      <div style={{ padding: "10px 8px", background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", color: C.dim, fontSize: "11px", letterSpacing: "1px", flexShrink: 0 }}>FT/NM</div>
+      style={{ flex: 1, minWidth: 0, background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      <div style={{ padding: "10px 8px", background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", color: C.dim, fontSize: "11px", letterSpacing: "1px", flexShrink: 0 }}>FT/NM</div>
       </div>
       </div>
       <div>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>GROUNDSPEED</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>GROUNDSPEED</div>
       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
       <input type="number" value={gradGs} onChange={e => setGradGs(e.target.value)} placeholder="e.g. 90"
-      style={{ flex: 1, minWidth: 0, background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
-      <div style={{ padding: "10px 8px", background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", color: C.dim, fontSize: "11px", letterSpacing: "1px", flexShrink: 0 }}>KT</div>
+      style={{ flex: 1, minWidth: 0, background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      <div style={{ padding: "10px 8px", background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", color: C.dim, fontSize: "11px", letterSpacing: "1px", flexShrink: 0 }}>KT</div>
       </div>
       </div>
       </div>
       {reqFpm !== null && (
       <div style={{ background: C.input, border: `2px solid ${canMeet === null ? C.border : canMeet ? C.green : C.error}`, borderRadius: "4px", overflow: "hidden" }}>
-      <div style={{ padding: "16px", textAlign: "center", borderBottom: `1px solid ${C.borderDim}` }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>REQUIRED CLIMB RATE</div>
+      <div style={{ padding: "16px", textAlign: "center", borderBottom: `${C.cardBorder} solid ${C.borderDim}` }}>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>REQUIRED CLIMB RATE</div>
       <div style={{ fontSize: "48px", fontWeight: "bold", color: C.text, lineHeight: 1 }}>{reqFpm}</div>
       <div style={{ fontSize: "13px", color: C.dim, marginTop: "6px", letterSpacing: "2px" }}>FT / MIN</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "4px" }}>{gradFtNm} ft/nm × {gradGs} kt ÷ 60</div>
@@ -851,8 +860,8 @@
       <ResultCard label="TAS" value={result.tas} unit="KTS" />
       <ResultCard label="FUEL FLOW" value={result.fuelFlow.toFixed(1)} unit="GPH" />
       </div>
-      <div style={{ background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "12px 14px", marginBottom: "12px" }}>
-      <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.green, marginBottom: "10px" }}>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "12px 14px", marginBottom: "12px" }}>
+      <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "10px" }}>
       ENDURANCE & RANGE · {reserve === "45min" ? "45 MIN RESERVE" : "NO RESERVE"}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "6px", marginBottom: "6px" }}>
@@ -1273,10 +1282,10 @@
       }
       const selHour = forecast ? forecast[selectedHour] : null;
       return (
-      <div style={{ background:C.input, border:"1px solid " + C.border, borderRadius:"3px", padding:"12px 14px", marginBottom:"8px" }}>
+      <div style={{ background:C.input, border:`${C.cardBorder} solid ${C.border}`, borderRadius:"3px", padding:"12px 14px", marginBottom:"8px" }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px" }}>
-      <div style={{ fontSize:"12px", letterSpacing:"3px", color:C.green }}>WEATHER AUTO-FILL</div>
-      <div style={{ display:"flex", gap:"0px", borderRadius:"3px", overflow:"hidden", border:"1px solid " + C.border }}>
+      <div style={{ fontSize:"12px", letterSpacing:"3px", color:C.isLight ? C.text : C.green, fontWeight:C.isLight ? "700" : "normal" }}>WEATHER AUTO-FILL</div>
+      <div style={{ display:"flex", gap:"0px", borderRadius:"3px", overflow:"hidden", border:`${C.cardBorder} solid ${C.border}` }}>
       {["current","forecast"].map(m2 => (
       <button key={m2} onClick={() => setMode(m2)} style={{
       padding:"4px 10px", background: mode === m2 ? C.green : C.bg,
@@ -1290,7 +1299,7 @@
       <input value={icao} onChange={e => setIcao(e.target.value.toUpperCase().slice(0,4))}
       onKeyDown={e => { if (e.key === "Enter") fetchAll(); }}
       placeholder="e.g. KLAF"
-      style={{ flex:1, minWidth:0, background:C.bg, border:"1px solid " + C.border, borderRadius:"3px", padding:"10px 12px", color:C.text, fontFamily:mono, fontSize:"18px", letterSpacing:"3px", boxSizing:"border-box" }} />
+      style={{ flex:1, minWidth:0, background:C.isLight ? "#fff" : C.bg, border:`${C.cardBorder} solid ${C.border}`, borderRadius:"3px", padding:"10px 12px", color:C.text, fontFamily:mono, fontSize:"18px", letterSpacing:"3px", boxSizing:"border-box" }} />
       <button onClick={fetchAll}
       style={{ flexShrink:0, background:C.green, border:"none", borderRadius:"3px", padding:"10px 16px", color:C.btnText, fontFamily:mono, fontSize:"12px", letterSpacing:"2px", cursor:"pointer", fontWeight:"bold", whiteSpace:"nowrap", minWidth:"64px" }}>
       {status === "loading"
@@ -1425,8 +1434,8 @@
       }, [alt, oat, tempUnit, weight, runway, windHeading, windSpeed, flaps, windComponents, windSpd, rwyNum, windHdg]);
       return (
       <Card>
-      <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.green, marginBottom: "10px" }}>TAKEOFF PERFORMANCE</div>
+      <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: `${C.cardBorder} solid ${C.border}` }}>
+      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "700" : "normal", marginBottom: "10px" }}>TAKEOFF PERFORMANCE</div>
       <div style={{ display: "flex", gap: "8px" }}>
       {[{val:"up", label:"FLAPS UP", fig:"5-7"},{val:"25", label:"FLAPS 25°", fig:"5-9 · 5-13"}].map(opt => (
       <button key={opt.val} onClick={() => { setFlaps(opt.val); setResult(null); }} style={{
@@ -1470,10 +1479,10 @@
                 }, React.createElement("span", null, "↓"), React.createElement("span", null, "FETCH FROM W&B  —  TAKEOFF " + tow.toLocaleString() + " LB"));
               })()}
       <div>
-      <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px", display:"flex", alignItems:"center", gap:"8px" }}>WIND{metarFilled.includes("wind") && <span style={{ fontSize:"11px", background:C.green, color:C.btnText, borderRadius:"3px", padding:"2px 6px", letterSpacing:"1px", fontWeight:"bold" }}>✓ METAR</span>}</div>
+      <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.isLight ? C.dim : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px", display:"flex", alignItems:"center", gap:"8px" }}>WIND{metarFilled.includes("wind") && <span style={{ fontSize:"11px", background:C.green, color:C.btnText, borderRadius:"3px", padding:"2px 6px", letterSpacing:"1px", fontWeight:"bold" }}>✓ METAR</span>}</div>
       <Grid3 style={{ marginBottom: "8px" }}>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
       {airportRunways.length > 0 ? (
       <div style={{ display:"flex", flexWrap:"wrap", gap:"5px" }}>
       {(() => {
@@ -1511,18 +1520,18 @@
       </div>
       ) : (
       <input type="number" value={runway} onChange={e => { setRunway(e.target.value.slice(0,2)); setRunwayFull(""); }} placeholder="e.g. 28"
-      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       )}
       </div>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>WIND DIR °</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>WIND DIR °</div>
       <input type="number" value={windHeading} onChange={e => setWindHeading(e.target.value)} placeholder="e.g. 270"
-      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       </div>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>SPEED KT</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>SPEED KT</div>
       <input type="number" value={windSpeed} onChange={e => setWindSpeed(e.target.value)} placeholder="e.g. 10"
-      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       </div>
       </Grid3>
       {windComponents && (() => {
@@ -1544,7 +1553,7 @@
       </div>
       );
       })()}
-      <div style={{ fontSize: "13px", color: C.dimmest, marginTop: "6px", letterSpacing: "1px" }}>Chart limit: 15kt headwind · 5kt tailwind · values beyond limit will be clamped</div>
+      <div style={{ fontSize: "13px", color: C.isLight ? C.dimmer : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "6px", letterSpacing: "1px" }}>Chart limit: 15kt headwind · 5kt tailwind · values beyond limit will be clamped</div>
       </div>
       </div>
       {error && <ErrorBox msg={error} />}
@@ -1708,7 +1717,7 @@
       return (
       <div style={{ background: C.input, border: `1px solid ${daColor}55`, borderRadius: "3px", padding: "10px 16px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <div>
-      <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.dim, marginBottom: "2px" }}>DENSITY ALTITUDE</div>
+      <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "2px" }}>DENSITY ALTITUDE</div>
       <div style={{ fontSize: "11px", letterSpacing: "1px", color: daColor }}>{daLabel}</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "2px" }}>+{diff.toLocaleString()} ft above pressure alt</div>
       </div>
@@ -1719,14 +1728,14 @@
       </div>
       );
       })()}
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: "4px", padding: "14px 14px 10px", marginBottom: "14px" }}>
+      <div style={{ background: C.card, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "4px", padding: "14px 14px 10px", marginBottom: "14px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-      <div style={{ fontSize: "15px", letterSpacing: "3px", color: C.green }}>FLAPS 25° TAKEOFF</div>
+      <div style={{ fontSize: "15px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal" }}>FLAPS 25° TAKEOFF</div>
       <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.dimmer }}>FULL THROTTLE · PAVED/LEVEL/DRY · A/C OFF</div>
       </div>
       <svg viewBox="0 0 460 165" style={{ width: "100%", display: "block" }}>
       {/* Sky background */}
-      <rect x="0" y="0" width="460" height="165" fill={C.card} />
+      <rect x="0" y="0" width="460" height="165" fill={C.isLight ? C.rwyBg : C.card} />
       <defs>
       <linearGradient id="rwyGrad" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stopColor={C.rwyAsphalt} />
@@ -1763,10 +1772,10 @@
       const cx = (18 + xGr) / 2;
       return (
       <>
-      <line x1="18" y1="75" x2={xGr} y2="75" stroke={markerColorRoll} strokeWidth="1" opacity="0.7" />
-      <line x1="18" y1="72" x2="18" y2="78" stroke={markerColorRoll} strokeWidth="1" />
-      <line x1={xGr} y1="72" x2={xGr} y2="78" stroke={markerColorRoll} strokeWidth="1" />
-      <rect x={cx - boxW/2} y="61" width={boxW} height="15" rx="2" fill={C.markerBg} stroke={markerColorRoll} strokeWidth="0.8" />
+      <line x1="18" y1="75" x2={xGr} y2="75" stroke={markerColorRoll} strokeWidth={C.isLight ? "2" : "1"} opacity={C.isLight ? "0.9" : "0.7"} />
+      <line x1="18" y1="72" x2="18" y2="78" stroke={markerColorRoll} strokeWidth={C.isLight ? "2" : "1"} />
+      <line x1={xGr} y1="72" x2={xGr} y2="78" stroke={markerColorRoll} strokeWidth={C.isLight ? "2" : "1"} />
+      <rect x={cx - boxW/2} y="61" width={boxW} height="15" rx="2" fill={C.markerBg} stroke={markerColorRoll} strokeWidth={C.isLight ? "1.5" : "0.8"} />
       <text x={cx} y="72" textAnchor="middle" fill={markerColorRoll} fontSize="11" fontFamily="Courier New">{label}</text>
       </>
       );
@@ -1778,10 +1787,10 @@
       const cx = (18 + x50) / 2;
       return (
       <>
-      <line x1="18" y1="122" x2={x50} y2="122" stroke={markerColor50} strokeWidth="1" opacity="0.7" />
-      <line x1="18" y1="119" x2="18" y2="125" stroke={markerColor50} strokeWidth="1" />
-      <line x1={x50} y1="119" x2={x50} y2="125" stroke={markerColor50} strokeWidth="1" />
-      <rect x={cx - boxW/2} y="127" width={boxW} height="15" rx="2" fill={C.markerBg} stroke={markerColor50} strokeWidth="0.8" />
+      <line x1="18" y1="122" x2={x50} y2="122" stroke={markerColor50} strokeWidth={C.isLight ? "2" : "1"} opacity={C.isLight ? "0.9" : "0.7"} />
+      <line x1="18" y1="119" x2="18" y2="125" stroke={markerColor50} strokeWidth={C.isLight ? "2" : "1"} />
+      <line x1={x50} y1="119" x2={x50} y2="125" stroke={markerColor50} strokeWidth={C.isLight ? "2" : "1"} />
+      <rect x={cx - boxW/2} y="127" width={boxW} height="15" rx="2" fill={C.markerBg} stroke={markerColor50} strokeWidth={C.isLight ? "1.5" : "0.8"} />
       <text x={cx} y="138" textAnchor="middle" fill={markerColor50} fontSize="11" fontFamily="Courier New">{label}</text>
       </>
       );
@@ -1844,12 +1853,12 @@
       <div style={{ background: C.input, border: `1px solid ${markerColorRoll}55`, borderRadius: "3px", padding: "12px 16px", textAlign: "center" }}>
       <div style={{ fontSize: "12px", letterSpacing: "2px", color: `${markerColorRoll}99`, marginBottom: "6px" }}>GROUND ROLL x1.5</div>
       <div style={{ fontSize: "32px", color: `${markerColorRoll}cc`, lineHeight: 1, fontWeight: "bold" }}>{Math.round(distGr * 1.5)}</div>
-      <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
       </div>
       <div style={{ background: C.input, border: `1px solid ${markerColor50}55`, borderRadius: "3px", padding: "12px 16px", textAlign: "center" }}>
       <div style={{ fontSize: "12px", letterSpacing: "2px", color: `${markerColor50}99`, marginBottom: "6px" }}>OVER 50 FT x1.5</div>
       <div style={{ fontSize: "32px", color: `${markerColor50}cc`, lineHeight: 1, fontWeight: "bold" }}>{Math.round(dist50 * 1.5)}</div>
-      <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
       </div>
       </Grid2>
       {(function() {
@@ -1879,17 +1888,17 @@
       </div>
       <div style={{ display: "flex", borderBottom: "1px solid " + col + "22" }}>
       <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: "1px solid " + col + "22" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>RWY {rwy.num} AVAILABLE</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>RWY {rwy.num} AVAILABLE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: C.text, lineHeight: 1 }}>{len.toLocaleString()}</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "3px", letterSpacing: "1px" }}>FT</div>
       </div>
       {gr > 0 && <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: d50 > 0 ? "1px solid " + col + "22" : "none" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>GND ROLL x1.5</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>GND ROLL x1.5</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: gr15ok ? C.text : C.error, lineHeight: 1 }}>{gr15.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: gr15ok ? C.warm : C.error, marginTop: "3px" }}>{Math.round(gr15/len*100)}% of runway</div>
       </div>}
       {d50 > 0 && <div style={{ flex: 1, padding: "14px 10px", textAlign: "center" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>50FT DISTANCE</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>50FT DISTANCE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: d50ok ? C.text : C.error, lineHeight: 1 }}>{d50.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: d50ok ? C.warm : C.error, marginTop: "3px" }}>{Math.round(d50/len*100)}% of runway</div>
       </div>}
@@ -1905,14 +1914,14 @@
       {(() => {
       const speeds = flapsUp ? getFlapsUpSpeeds(result.weightLbs || 2550) : getTakeoffSpeeds(result.weightLbs || 2550);
       return (
-      <div style={{ background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "12px 16px", marginBottom: "12px", display: "flex", justifyContent: "space-around", alignItems: "center" }}>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "12px 16px", marginBottom: "12px", display: "flex", justifyContent: "space-around", alignItems: "center" }}>
       <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>LIFTOFF</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "4px" }}>LIFTOFF</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: markerColorRoll }}>{speeds.liftoff}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>KIAS</span></div>
       </div>
       <div style={{ width: "1px", height: "40px", background: C.borderDim }} />
       <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>50 FT BARRIER</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "4px" }}>50 FT BARRIER</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: markerColor50 }}>{speeds.barrier}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>KIAS</span></div>
       </div>
       </div>
@@ -2176,8 +2185,8 @@
       }, [alt, oat, tempUnit, weight, runway, windHeading, windSpeed, windComponents, windSpd, rwyNum, windHdg]);
       return (
       <Card>
-      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.green, marginBottom: "6px" }}>LANDING PERFORMANCE</div>
+      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `${C.cardBorder} solid ${C.border}` }}>
+      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "6px" }}>LANDING PERFORMANCE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", letterSpacing: "2px", color: C.text }}>FLAPS 40°</div>
       <div style={{ fontSize: "13px", color: C.dimmer, marginTop: "6px", letterSpacing: "1px" }}>POWER OFF · 66 KIAS · FULL STALL · MAX BRAKING · PAVED/LEVEL/DRY · FIG 5-41</div>
       </div>
@@ -2211,10 +2220,10 @@
                 }, React.createElement("span", null, "↓"), React.createElement("span", null, "FETCH FROM W&B  —  LANDING " + lw.toLocaleString() + " LB"));
               })()}
       <div>
-      <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px", display:"flex", alignItems:"center", gap:"8px" }}>WIND{metarFilled.includes("wind") && <span style={{ fontSize:"11px", background:C.green, color:C.btnText, borderRadius:"3px", padding:"2px 6px", letterSpacing:"1px", fontWeight:"bold" }}>✓ METAR</span>}</div>
+      <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.isLight ? C.dim : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px", display:"flex", alignItems:"center", gap:"8px" }}>WIND{metarFilled.includes("wind") && <span style={{ fontSize:"11px", background:C.green, color:C.btnText, borderRadius:"3px", padding:"2px 6px", letterSpacing:"1px", fontWeight:"bold" }}>✓ METAR</span>}</div>
       <Grid3 style={{ marginBottom: "8px" }}>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
       {airportRunways.length > 0 ? (
       <div style={{ display:"flex", flexWrap:"wrap", gap:"5px" }}>
       {(() => {
@@ -2252,18 +2261,18 @@
       </div>
       ) : (
       <input type="number" value={runway} onChange={e => { setRunway(e.target.value.slice(0,2)); setRunwayFull(""); }} placeholder="e.g. 28"
-      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       )}
       </div>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>WIND DIR °</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>WIND DIR °</div>
       <input type="number" value={windHeading} onChange={e => setWindHeading(e.target.value)} placeholder="e.g. 270"
-      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       </div>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>SPEED KT</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>SPEED KT</div>
       <input type="number" value={windSpeed} onChange={e => setWindSpeed(e.target.value)} placeholder="e.g. 10"
-      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       </div>
       </Grid3>
       {windComponents && (() => {
@@ -2285,7 +2294,7 @@
       </div>
       );
       })()}
-      <div style={{ fontSize: "13px", color: C.dimmest, marginTop: "6px", letterSpacing: "1px" }}>Chart limit: 15kt headwind · 5kt tailwind · values beyond limit will be clamped</div>
+      <div style={{ fontSize: "13px", color: C.isLight ? C.dimmer : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "6px", letterSpacing: "1px" }}>Chart limit: 15kt headwind · 5kt tailwind · values beyond limit will be clamped</div>
       </div>
       </div>
       {error && <ErrorBox msg={error} />}
@@ -2400,14 +2409,14 @@
       </div>
       </div>
       )}
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: "4px", padding: "14px 14px 10px", marginBottom: "14px" }}>
+      <div style={{ background: C.card, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "4px", padding: "14px 14px 10px", marginBottom: "14px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-      <div style={{ fontSize: "15px", letterSpacing: "3px", color: C.green }}>FLAPS 40° LANDING</div>
+      <div style={{ fontSize: "15px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal" }}>FLAPS 40° LANDING</div>
       <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.dimmer }}>POWER OFF · MAX BRAKING · PAVED/LEVEL/DRY</div>
       </div>
       <svg viewBox="0 0 460 165" style={{ width: "100%", display: "block" }}>
       {/* Sky background */}
-      <rect x="0" y="0" width="460" height="165" fill={C.card} />
+      <rect x="0" y="0" width="460" height="165" fill={C.isLight ? C.rwyBg : C.card} />
       <defs>
       <linearGradient id="rwyGradLd" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stopColor={C.rwyAsphalt} />
@@ -2453,10 +2462,10 @@
       const cx = (xTd + xStop) / 2;
       return (
       <>
-      <line x1={xTd} y1="75" x2={xStop} y2="75" stroke={markerColorRoll} strokeWidth="1" opacity="0.7" />
+      <line x1={xTd} y1="75" x2={xStop} y2="75" stroke={markerColorRoll} strokeWidth={C.isLight ? "2" : "1"} opacity={C.isLight ? "0.9" : "0.7"} />
       <line x1={xTd} y1="72" x2={xTd} y2="78" stroke={markerColorRoll} strokeWidth="1" />
-      <line x1={xStop} y1="72" x2={xStop} y2="78" stroke={markerColorRoll} strokeWidth="1" />
-      <rect x={cx - boxW/2} y="61" width={boxW} height="15" rx="2" fill={C.markerBg} stroke={markerColorRoll} strokeWidth="0.8" />
+      <line x1={xStop} y1="72" x2={xStop} y2="78" stroke={markerColorRoll} strokeWidth={C.isLight ? "2" : "1"} />
+      <rect x={cx - boxW/2} y="61" width={boxW} height="15" rx="2" fill={C.markerBg} stroke={markerColorRoll} strokeWidth={C.isLight ? "1.5" : "0.8"} />
       <text x={cx} y="72" textAnchor="middle" fill={markerColorRoll} fontSize="11" fontFamily="Courier New">{label}</text>
       </>
       );
@@ -2470,10 +2479,10 @@
       const cx = (xObs + xStop) / 2;
       return (
       <>
-      <line x1={xObs} y1="122" x2={xStop} y2="122" stroke={markerColor50} strokeWidth="1" opacity="0.7" />
+      <line x1={xObs} y1="122" x2={xStop} y2="122" stroke={markerColor50} strokeWidth={C.isLight ? "2" : "1"} opacity={C.isLight ? "0.9" : "0.7"} />
       <line x1={xObs} y1="119" x2={xObs} y2="125" stroke={markerColor50} strokeWidth="1" />
-      <line x1={xStop} y1="119" x2={xStop} y2="125" stroke={markerColor50} strokeWidth="1" />
-      <rect x={cx - boxW/2} y="127" width={boxW} height="15" rx="2" fill={C.markerBg} stroke={markerColor50} strokeWidth="0.8" />
+      <line x1={xStop} y1="119" x2={xStop} y2="125" stroke={markerColor50} strokeWidth={C.isLight ? "2" : "1"} />
+      <rect x={cx - boxW/2} y="127" width={boxW} height="15" rx="2" fill={C.markerBg} stroke={markerColor50} strokeWidth={C.isLight ? "1.5" : "0.8"} />
       <text x={cx} y="138" textAnchor="middle" fill={markerColor50} fontSize="11" fontFamily="Courier New">{label}</text>
       </>
       );
@@ -2531,7 +2540,7 @@
       <div key={label} style={{ background: C.input, border: `1px solid ${color}55`, borderRadius: "3px", padding: "12px 16px", textAlign: "center" }}>
       <div style={{ fontSize: "12px", letterSpacing: "2px", color: `${color}99`, marginBottom: "6px" }}>{label}</div>
       <div style={{ fontSize: "32px", color: `${color}cc`, lineHeight: 1, fontWeight: "bold" }}>{val}</div>
-      <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
       </div>
       ))}
       </Grid2>
@@ -2562,17 +2571,17 @@
       </div>
       <div style={{ display: "flex", borderBottom: "1px solid " + col + "22" }}>
       <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: "1px solid " + col + "22" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>RWY {rwy.num} AVAILABLE</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>RWY {rwy.num} AVAILABLE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: C.text, lineHeight: 1 }}>{len.toLocaleString()}</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "3px", letterSpacing: "1px" }}>FT</div>
       </div>
       {gr > 0 && <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: d50 > 0 ? "1px solid " + col + "22" : "none" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>GND ROLL x1.5</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>GND ROLL x1.5</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: gr15ok ? C.text : C.error, lineHeight: 1 }}>{gr15.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: gr15ok ? C.warm : C.error, marginTop: "3px" }}>{Math.round(gr15/len*100)}% of runway</div>
       </div>}
       {d50 > 0 && <div style={{ flex: 1, padding: "14px 10px", textAlign: "center" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>50FT DISTANCE</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>50FT DISTANCE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: d50ok ? C.text : C.error, lineHeight: 1 }}>{d50.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: d50ok ? C.warm : C.error, marginTop: "3px" }}>{Math.round(d50/len*100)}% of runway</div>
       </div>}
@@ -2615,8 +2624,8 @@
       const terrainVal = parseFloat(terrainAlt) || 0;
       return (
       <Card>
-      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.green, marginBottom: "6px" }}>GLIDE RANGE</div>
+      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `${C.cardBorder} solid ${C.border}` }}>
+      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "6px" }}>GLIDE RANGE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", letterSpacing: "2px", color: C.text }}>POWER OFF</div>
       <div style={{ fontSize: "13px", color: C.dimmer, marginTop: "6px", letterSpacing: "1px" }}>FLAPS UP · 76 KIAS · 2,250 LB · NO WIND · FIG 5-39</div>
       </div>
@@ -2635,23 +2644,23 @@
       {/* Main result cards */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
       <div style={{ background: C.input, border: `1px solid ${C.green}`, borderRadius: "3px", padding: "18px 12px", textAlign: "center" }}>
-      <div style={{ fontSize: "12px", letterSpacing: "2px", color: C.green, marginBottom: "8px" }}>GLIDE RANGE</div>
+      <div style={{ fontSize: "12px", letterSpacing: "2px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px" }}>GLIDE RANGE</div>
       <div style={{ fontSize: "44px", color: C.text, lineHeight: 1, fontWeight: "bold" }}>{result.netRange.toFixed(1)}</div>
       <div style={{ fontSize: "13px", color: C.dim, marginTop: "6px", letterSpacing: "2px" }}>NAUTICAL MILES</div>
       </div>
-      <div style={{ background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "18px 12px", textAlign: "center" }}>
-      <div style={{ fontSize: "12px", letterSpacing: "2px", color: C.green, marginBottom: "8px" }}>HEIGHT AGL</div>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "18px 12px", textAlign: "center" }}>
+      <div style={{ fontSize: "12px", letterSpacing: "2px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px" }}>HEIGHT AGL</div>
       <div style={{ fontSize: "44px", color: C.text, lineHeight: 1, fontWeight: "bold" }}>{agl.toLocaleString()}</div>
       <div style={{ fontSize: "13px", color: C.dim, marginTop: "6px", letterSpacing: "2px" }}>FEET</div>
       </div>
       </div>
       {/* Altitude profile bar */}
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: "4px", padding: "16px", marginBottom: "14px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.green, marginBottom: "12px" }}>ALTITUDE PROFILE</div>
+      <div style={{ background: C.card, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "4px", padding: "16px", marginBottom: "14px" }}>
+      <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "12px" }}>ALTITUDE PROFILE</div>
       <div style={{ position: "relative", height: "120px", display: "flex", alignItems: "flex-end", gap: "24px", padding: "0 8px" }}>
       {/* Cruise altitude bar */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end" }}>
-      <div style={{ fontSize: "12px", color: C.green, marginBottom: "4px", letterSpacing: "1px" }}>{result.cruise.toLocaleString()} ft</div>
+      <div style={{ fontSize: "12px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px", letterSpacing: "1px" }}>{result.cruise.toLocaleString()} ft</div>
       <div style={{ width: "100%", background: `rgba(106,170,122,0.25)`, border: `1px solid ${C.green}`, borderRadius: "2px 2px 0 0", height: `${pctCruise * 100}%`, minHeight: "4px", position: "relative" }}>
       <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: `${pctTerrain / pctCruise * 100}%`, background: "rgba(106,170,122,0.15)", borderTop: `1px dashed ${C.dimmer}` }} />
       </div>
@@ -2660,7 +2669,7 @@
       {/* Glide arrow area */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", paddingBottom: "20px" }}>
       <div style={{ fontSize: "28px", color: C.green, lineHeight: 1 }}>→</div>
-      <div style={{ fontSize: "12px", color: C.green, letterSpacing: "1px", marginTop: "4px" }}>{result.netRange.toFixed(1)} nm</div>
+      <div style={{ fontSize: "12px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "1px", marginTop: "4px" }}>{result.netRange.toFixed(1)} nm</div>
       </div>
       {/* Terrain altitude bar */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end" }}>
@@ -2711,24 +2720,24 @@
       ];
       return (
       <Card>
-      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.green, marginBottom: "24px" }}>SPEEDS REFERENCE</div>
+      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "700" : "normal", marginBottom: "24px" }}>SPEEDS REFERENCE</div>
       {/* shared weight input */}
       <div style={{ marginBottom: "20px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>GROSS WEIGHT</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>GROSS WEIGHT</div>
       <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
       <input
       type="number"
       value={weight}
       onChange={e => setWeight(e.target.value)}
       placeholder="e.g. 2400"
-      style={{ flex: 1, boxSizing: "border-box", background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }}
+      style={{ flex: 1, boxSizing: "border-box", background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }}
       />
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim }}>LBS</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal" }}>LBS</div>
       </div>
       {weightVal < 2000 && weight !== "" && <div style={{ fontSize: "11px", color: C.error, marginTop: "4px", letterSpacing: "1px" }}>Minimum chart weight is 2,000 lb</div>}
       </div>
       {/* ── MANEUVERING SPEED ── */}
-      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.green, marginBottom: "12px", borderBottom: "1px solid " + C.border, paddingBottom: "8px" }}>MANEUVERING SPEED (Va)</div>
+      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "12px", borderBottom: C.cardBorder + " solid " + C.border, paddingBottom: "8px" }}>MANEUVERING SPEED (Va)</div>
       {va !== null ? (
       <div style={{ background: C.input, border: "2px solid " + C.cool, borderRadius: "4px", padding: "20px", textAlign: "center", marginBottom: "20px" }}>
       <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.cool, marginBottom: "6px" }}>Va AT {Math.round(weightVal).toLocaleString()} LB</div>
@@ -2737,15 +2746,15 @@
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "8px" }}>Do not make full or abrupt control inputs above this speed</div>
       </div>
       ) : (
-      <div style={{ background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "16px", textAlign: "center", color: C.dim, fontSize: "12px", letterSpacing: "1px", marginBottom: "20px" }}>
+      <div style={{ background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "16px", textAlign: "center", color: C.dim, fontSize: "12px", letterSpacing: "1px", marginBottom: "20px" }}>
       Enter gross weight (2,000–2,550 lb) to calculate
       </div>
       )}
       {/* ── STALL SPEED ── */}
-      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.green, marginBottom: "12px", borderBottom: "1px solid " + C.border, paddingBottom: "8px" }}>STALL SPEED (Vs) · FIG 5-5</div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "1px", marginBottom: "14px" }}>Power off · A/C off · KIAS</div>
+      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "12px", borderBottom: C.cardBorder + " solid " + C.border, paddingBottom: "8px" }}>STALL SPEED (Vs) · FIG 5-5</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "1px", marginBottom: "14px" }}>Power off · A/C off · KIAS</div>
       <div style={{ marginBottom: "14px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>FLAP SETTING</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>FLAP SETTING</div>
       <div style={{ display: "flex", gap: "8px" }}>
       {flapsOptions.map(opt => (
       <button key={opt.val} onClick={() => setFlaps(opt.val)} style={{
@@ -2758,7 +2767,7 @@
       </div>
       </div>
       <div style={{ marginBottom: "16px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>ANGLE OF BANK</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>ANGLE OF BANK</div>
       <input
       type="range"
       min="0" max="60" step="1"
@@ -2791,7 +2800,7 @@
       )}
       </div>
       ) : (
-      <div style={{ background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "16px", textAlign: "center", color: C.dim, fontSize: "12px", letterSpacing: "1px", marginBottom: "12px" }}>
+      <div style={{ background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "16px", textAlign: "center", color: C.dim, fontSize: "12px", letterSpacing: "1px", marginBottom: "12px" }}>
       Enter gross weight (2,000–2,550 lb) to calculate
       </div>
       )}
@@ -2903,6 +2912,37 @@
       const overBagB    = bgb > MAX_BAG_B;
       const overFuel    = fg > MAX_FUEL_GAL;
       const hasLoading  = totalWeight > EMPTY_WT;
+      var minFuelForCG = (function() {
+        var nonFuelWt  = EMPTY_WT + p + cp + rl + rr + bga + bgb;
+        var nonFuelMom = EMPTY_MOM + (p+cp)*ARMS.frontSeats + (rl+rr)*ARMS.rearSeats + bga*ARMS.baggageA + bgb*ARMS.baggageB;
+        if (nonFuelWt <= 0) return null;
+        var zfCG = nonFuelMom / nonFuelWt;
+        if (zfCG <= aftLimitUtil) return 0;
+        var fuelLb = (aftLimitUtil * nonFuelWt - nonFuelMom) / (ARMS.fuel - aftLimitUtil);
+        if (fuelLb <= 0) return 0;
+        return Math.ceil(fuelLb / FUEL_LB_PER_GAL * 10) / 10;
+      })();
+      var maxFuelForCG = (function() {
+        var nonFuelWt  = EMPTY_WT + p + cp + rl + rr + bga + bgb;
+        var nonFuelMom = EMPTY_MOM + (p+cp)*ARMS.frontSeats + (rl+rr)*ARMS.rearSeats + bga*ARMS.baggageA + bgb*ARMS.baggageB;
+        if (nonFuelWt <= 0) return null;
+        // Solve quadratic: fwdLimit is linear in W, fuel arm is fwd of limit crossover at high weights
+        // fwdLimit(W) = 35 + 6*(W-1950)/600 = 35 + 0.01*(W-1950)
+        // W = nonFuelWt + fuelLb
+        // CG = (nonFuelMom + fuelLb*48) / (nonFuelWt + fuelLb) = fwdLimit(nonFuelWt + fuelLb)
+        // (nonFuelMom + 48x) = (35 + 0.01*(nonFuelWt+x-1950)) * (nonFuelWt+x)
+        var a = 0.01;
+        var fwdBase = 35 + 0.01 * (nonFuelWt - 1950);
+        var b = fwdBase + 0.01 * nonFuelWt - ARMS.fuel;
+        var c = nonFuelWt * fwdBase - nonFuelMom;
+        var disc = b*b - 4*a*c;
+        if (disc < 0) return null;
+        var fuelLb = (-b + Math.sqrt(disc)) / (2*a);
+        if (fuelLb <= 0) return null;
+        var maxGal = Math.floor(fuelLb / FUEL_LB_PER_GAL * 10) / 10;
+        if (maxGal >= MAX_FUEL_GAL) return null;
+        return maxGal;
+      })();
       const statusColor = overMaxGW || overBagA || overBagB || overFuel ? C.error
         : !hasLoading ? C.dim : inEnvelope ? C.green : C.error;
       const statusText  = overMaxGW ? "OVER MAX GROSS WEIGHT"
@@ -2937,7 +2977,7 @@
       ];
       return (
       <Card>
-      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.green, marginBottom: "20px" }}>WEIGHT AND BALANCE</div>
+      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "700" : "normal", marginBottom: "20px" }}>WEIGHT AND BALANCE</div>
       <div style={{ position: "relative", background: C.surface, borderRadius: "6px", border: "1px solid "+C.border, marginBottom: "16px" }}
         onClick={function() { setActive(null); }}>
       <svg viewBox="109 58 135 155" style={{ width: "100%", display: "block" }}>
@@ -3020,7 +3060,7 @@
           var cgLabel = pos < 0.33 ? "FWD" : pos > 0.67 ? "AFT" : "MID";
           var cgLabelColor = pos < 0.33 ? C.cool : pos > 0.67 ? C.warm : C.green;
           return React.createElement("div", { style: { textAlign: "right" } },
-            React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.dimmest, marginBottom: "2px" } }, "CG POSITION"),
+            React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "2px" } }, "CG POSITION"),
             React.createElement("div", null,
               React.createElement("span", { style: { color: C.text, fontWeight: "bold", fontSize: "18px" } }, cg.toFixed(2)+'"'),
               React.createElement("span", { style: { color: cgLabelColor, fontWeight: "bold", fontSize: "13px", marginLeft: "8px", letterSpacing: "2px" } }, cgLabel)
@@ -3030,7 +3070,7 @@
       </div>
       <div style={{ background: C.surface, border: "1px solid "+C.border, borderRadius: "4px", overflow: "hidden", marginBottom: "16px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 65px 90px", padding: "8px 14px", background: C.input, borderBottom: "1px solid "+C.border }}>
-          {["ITEM","WT (LB)","ARM","MOMENT"].map(function(h) { return React.createElement("div", { key: h, style: { fontSize: "12px", letterSpacing: "2px", color: C.dim } }, h); })}
+          {["ITEM","WT (LB)","ARM","MOMENT"].map(function(h) { return React.createElement("div", { key: h, style: { fontSize: "12px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal" } }, h); })}
         </div>
         {rows.map(function(row, i) {
           if (!row.fixed && row.weight === 0) return null;
@@ -3051,28 +3091,28 @@
           React.createElement("div", { style: { borderTop: "2px solid "+C.border } },
             React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr auto", padding: "10px 14px", borderBottom: "1px solid "+C.borderDim, alignItems: "center" } },
               React.createElement("div", null,
-                React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "2px" } }, "RAMP WEIGHT"),
+                React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "2px" } }, "RAMP WEIGHT"),
                 React.createElement("div", { style: { fontSize: "18px", fontWeight: "bold", color: C.text } }, rampWeight.toFixed(0)+" LB")
               ),
               React.createElement("div", { style: { textAlign: "right" } },
-                React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "2px" } }, "CG"),
+                React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "2px" } }, "CG"),
                 React.createElement("div", { style: { fontSize: "16px", color: C.text } }, cg.toFixed(2)+'"')
               )
             ),
             React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr auto", padding: "10px 14px", alignItems: "center", borderBottom: hasLanding ? "1px solid "+C.borderDim : "none" } },
               React.createElement("div", null,
-                React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.green, marginBottom: "2px", display: "flex", alignItems: "center", gap: "6px" } },
+                React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "2px", display: "flex", alignItems: "center", gap: "6px" } },
                   React.createElement("svg", { width: "12", height: "12", viewBox: "0 0 12 12" },
                     React.createElement("circle", { cx: "6", cy: "6", r: "5", fill: "none", stroke: C.green, strokeWidth: "2" }),
                     React.createElement("circle", { cx: "6", cy: "6", r: "2", fill: C.green })
                   ), "TAKEOFF WEIGHT"
                 ),
                 React.createElement("div", { style: { fontSize: "18px", fontWeight: "bold", color: C.green } }, takeoffWeight.toFixed(0)+" LB"),
-                React.createElement("div", { style: { fontSize: "10px", color: C.dimmest, marginTop: "2px", letterSpacing: "1px" } }, "-1.5 gal start/taxi (9.0 lb)")
+                React.createElement("div", { style: { fontSize: "10px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "2px", letterSpacing: "1px" } }, "-1.5 gal start/taxi (9.0 lb)")
               ),
               React.createElement("div", { style: { textAlign: "right" } },
-                React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.green, marginBottom: "2px" } }, "CG"),
-                React.createElement("div", { style: { fontSize: "16px", color: C.green } }, takeoffCG.toFixed(2)+'"')
+                React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "2px" } }, "CG"),
+                React.createElement("div", { style: { fontSize: "16px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal" } }, takeoffCG.toFixed(2)+'"')
               )
             ),
             hasLanding && React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr auto", padding: "10px 14px", alignItems: "center" } },
@@ -3084,7 +3124,7 @@
                   ), "LANDING WEIGHT"
                 ),
                 React.createElement("div", { style: { fontSize: "18px", fontWeight: "bold", color: C.cool } }, landingWeight.toFixed(0)+" LB"),
-                React.createElement("div", { style: { fontSize: "10px", color: C.dimmest, marginTop: "2px", letterSpacing: "1px" } }, "-"+fbg.toFixed(1)+" gal flight burn ("+fbl.toFixed(1)+" lb)")
+                React.createElement("div", { style: { fontSize: "10px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "2px", letterSpacing: "1px" } }, "-"+fbg.toFixed(1)+" gal flight burn ("+fbl.toFixed(1)+" lb)")
               ),
               React.createElement("div", { style: { textAlign: "right" } },
                 React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.cool, marginBottom: "2px" } }, "CG"),
@@ -3096,7 +3136,7 @@
       </div>
       <div style={{ background: C.surface, border: "1px solid "+C.border, borderRadius: "4px", padding: "12px 14px", marginBottom: "12px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-          <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.dim }}>CG ENVELOPE</div>
+          <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal" }}>CG ENVELOPE</div>
           {showDot && React.createElement("div", { style: { display: "flex", gap: "12px", alignItems: "center" } },
             React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "4px" } },
               React.createElement("svg", { width: "12", height: "12", viewBox: "0 0 12 12" },
@@ -3133,6 +3173,26 @@
           </g>
         </svg>
       </div>
+      {hasLoading && minFuelForCG !== null && minFuelForCG > 0 && React.createElement("div", {
+        style: { background: C.surface, border: "1px solid " + C.warm, borderRadius: "4px", padding: "12px 16px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }
+      },
+        React.createElement("div", null,
+          React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.warm, marginBottom: "3px", fontFamily: "'Courier New', monospace" } }, "MIN FUEL FOR CG"),
+          React.createElement("div", { style: { fontSize: "22px", fontWeight: "bold", color: C.text } }, minFuelForCG.toFixed(1) + " GAL"),
+          React.createElement("div", { style: { fontSize: "10px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "2px", letterSpacing: "1px", fontFamily: "'Courier New', monospace" } }, "Minimum fuel to stay within aft CG limit")
+        ),
+        React.createElement("div", { style: { fontSize: "28px", color: C.warm, opacity: 0.6 } }, "!")
+      )}
+      {hasLoading && maxFuelForCG !== null && React.createElement("div", {
+        style: { background: C.surface, border: "1px solid " + C.warm, borderRadius: "4px", padding: "12px 16px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }
+      },
+        React.createElement("div", null,
+          React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.warm, marginBottom: "3px", fontFamily: "'Courier New', monospace" } }, "MAX FUEL FOR CG"),
+          React.createElement("div", { style: { fontSize: "22px", fontWeight: "bold", color: C.text } }, maxFuelForCG.toFixed(1) + " GAL"),
+          React.createElement("div", { style: { fontSize: "10px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "2px", letterSpacing: "1px", fontFamily: "'Courier New', monospace" } }, "Exceeding this fuel load pushes CG past forward limit")
+        ),
+        React.createElement("div", { style: { fontSize: "28px", color: C.warm, opacity: 0.6 } }, "!")
+      )}
       <NoteBox text="Empty weight 1,658.2 lb at CG 37.6 in. Max gross weight 2,550 lb. Fuel: 53 gal max at 48.0 in. Baggage A: 120 lb max at 95.0 in. Baggage B: 50 lb max at 123.0 in. Always verify against aircraft-specific POH and weight record." />
       </Card>
       );
@@ -3195,6 +3255,20 @@
       const overBaggage = bg > MAX_BAGGAGE;
       const overFuel    = fg > MAX_FUEL_GAL;
       const hasLoading  = totalWeight > EMPTY_WT;
+      var maxFuelForCG = (function() {
+        var nonFuelWt  = EMPTY_WT + p + cp + rl + rr + bg;
+        var nonFuelMom = EMPTY_MOM + (p+cp)*ARMS.frontSeats + (rl+rr)*ARMS.rearSeats + bg*ARMS.baggage;
+        if (nonFuelWt <= 0) return null;
+        // Solve: (nonFuelMom + fuelLb*ARMS.fuel) / (nonFuelWt + fuelLb) = aftLimit
+        // fuelLb*(ARMS.fuel - aftLimit) = aftLimit*nonFuelWt - nonFuelMom
+        var denom = ARMS.fuel - aftLimit;
+        if (Math.abs(denom) < 0.001) return null;
+        var fuelLb = (aftLimit * nonFuelWt - nonFuelMom) / denom;
+        if (fuelLb <= 0) return null;
+        var maxGal = Math.floor(fuelLb / FUEL_LB_PER_GAL * 10) / 10;
+        if (maxGal >= MAX_FUEL_GAL) return null;
+        return maxGal;
+      })();
       const statusColor = overMaxGW || overBaggage || overFuel ? C.error
       : !hasLoading ? C.dim
       : inEnvelope ? C.green : C.error;
@@ -3223,9 +3297,9 @@
       ];
       return (
       <Card>
-      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.green, marginBottom: "20px" }}>WEIGHT AND BALANCE</div>
+      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "700" : "normal", marginBottom: "20px" }}>WEIGHT AND BALANCE</div>
       {/* Top-down aircraft diagram */}
-      <div style={{ position: "relative", background: C.surface, borderRadius: "6px", border: "1px solid " + C.border, marginBottom: "16px" }}
+      <div style={{ position: "relative", background: C.surface, borderRadius: "6px", border: C.cardBorder + " solid " + C.border, marginBottom: "16px" }}
       onClick={function() { setActive(null); }}>
       <svg viewBox="109 58 135 145" style={{ width: "100%", display: "block" }}>
       {/* Aircraft silhouette - clean vector top-down */}
@@ -3292,7 +3366,7 @@
       onChange: function(e) { s.setValue(e.target.value); },
       ref: function(el) { if (el && el.dataset.station !== active) { el.dataset.station = active; setTimeout(function() { el.focus(); }, 30); } },
       placeholder: "0",
-      style: { flex: 1, background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "26px", textAlign: "right", width: "100%" }
+      style: { flex: 1, background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "26px", textAlign: "right", width: "100%" }
       }),
       React.createElement("div", { style: { fontSize: "9px", color: C.dim, fontFamily: mono, flexShrink: 0 } }, s.unit)
       ),
@@ -3306,7 +3380,7 @@
             value: fuelBurn,
             onChange: function(e) { setFuelBurn(e.target.value); },
             placeholder: "0",
-            style: { flex: 1, background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "26px", textAlign: "right", width: "100%" }
+            style: { flex: 1, background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "26px", textAlign: "right", width: "100%" }
           }),
           React.createElement("div", { style: { fontSize: "9px", color: C.dim, fontFamily: mono, flexShrink: 0 } }, "GAL")
         )
@@ -3328,7 +3402,7 @@
         var cgLabel = pos < 0.33 ? "FWD" : pos > 0.67 ? "AFT" : "MID";
         var cgLabelColor = pos < 0.33 ? C.cool : pos > 0.67 ? C.warm : C.green;
         return React.createElement("div", { style: { textAlign: "right" } },
-          React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.dimmest, marginBottom: "2px" } }, "CG POSITION"),
+          React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottomm: "2px" } }, "CG POSITION"),
           React.createElement("div", null,
             React.createElement("span", { style: { color: C.text, fontWeight: "bold", fontSize: "18px" } }, cg.toFixed(2) + '"'),
             React.createElement("span", { style: { color: cgLabelColor, fontWeight: "bold", fontSize: "13px", marginLeft: "8px", letterSpacing: "2px" } }, cgLabel)
@@ -3337,8 +3411,8 @@
       })()}
       </div>
       {/* Moment table */}
-      <div style={{ background: C.surface, border: "1px solid " + C.border, borderRadius: "4px", overflow: "hidden", marginBottom: "16px" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 65px 90px", padding: "8px 14px", background: C.input, borderBottom: "1px solid " + C.border }}>
+      <div style={{ background: C.surface, border: C.cardBorder + " solid " + C.border, borderRadius: "4px", overflow: "hidden", marginBottom: "16px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 65px 90px", padding: "8px 14px", background: C.input, borderBottom: C.cardBorder + " solid " + C.border }}>
       {["ITEM","WT (LB)","ARM","MOMENT"].map(function(h) {
       return React.createElement("div", {key:h, style:{fontSize:"12px",letterSpacing:"2px",color:C.dim}}, h);
       })}
@@ -3451,6 +3525,16 @@
       </g>
       </svg>
       </div>
+      {hasLoading && maxFuelForCG !== null && React.createElement("div", {
+        style: { background: C.surface, border: "1px solid " + C.warm, borderRadius: "4px", padding: "12px 16px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }
+      },
+        React.createElement("div", null,
+          React.createElement("div", { style: { fontSize: "11px", letterSpacing: "2px", color: C.warm, marginBottom: "3px", fontFamily: "'Courier New', monospace" } }, "MAX FUEL FOR CG"),
+          React.createElement("div", { style: { fontSize: "22px", fontWeight: "bold", color: C.text } }, maxFuelForCG.toFixed(1) + " GAL"),
+          React.createElement("div", { style: { fontSize: "10px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "2px", letterSpacing: "1px", fontFamily: "'Courier New', monospace" } }, "Exceeding this fuel load will push CG past aft limit")
+        ),
+        React.createElement("div", { style: { fontSize: "28px", color: C.warm, opacity: 0.6 } }, "!")
+      )}
       <NoteBox text="Empty weight 1,673.2 lb, moment 147,408.4 in-lb. Max gross weight 2,550 lb. Fuel: 48 gal max (288 lb) at 95.0 in. Baggage: 200 lb max at 142.8 in. Always verify against aircraft-specific POH and weight record." />
       </Card>
       );
@@ -3479,10 +3563,10 @@
       <div style={{ minHeight: "100vh", background: C.bg, fontFamily: mono, color: C.text, display: "flex", flexDirection: "column", alignItems: "center", padding: mobile ? "16px 12px" : "32px 24px" }}>
       {onBack && (
       <div style={{ width: "100%", maxWidth: "860px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <button onClick={onBack} style={{ background: "none", border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
+      <button onClick={onBack} style={{ background: "none", border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
       ← AIRCRAFT
       </button>
-      <button onClick={toggleTheme} style={{ background: "none", border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
+      <button onClick={toggleTheme} style={{ background: "none", border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
       {theme === "dark" ? "☀ LIGHT" : "☾ DARK"}
       </button>
       </div>
@@ -3491,14 +3575,14 @@
       <div style={{ fontSize: mobile ? "11px" : "18px", letterSpacing: mobile ? "3px" : "6px", color: C.green, marginBottom: "6px" }}>PA-28-181 ARCHER III · POH PERFORMANCE</div>
       <div style={{ fontSize: mobile ? "22px" : "36px", fontWeight: "bold", letterSpacing: mobile ? "1px" : "3px", textTransform: "uppercase" }}>PERFORMANCE CALCULATOR</div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr 1fr 1fr" : "repeat(8, 1fr)", marginBottom: mobile ? "14px" : "24px", border: `1px solid ${C.border}`, borderRadius: "4px", overflow: "hidden", width: "100%", maxWidth: "860px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr 1fr 1fr" : "repeat(8, 1fr)", marginBottom: mobile ? "14px" : "24px", border: `${C.cardBorder} solid ${C.border}`, borderRadius: "4px", overflow: "hidden", width: "100%", maxWidth: "860px" }}>
       {tabs.map((tab, i) => (
       <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
       padding: mobile ? "10px 4px" : "14px 6px",
       background: activeTab === tab.id ? C.green : C.card,
       border: "none",
-      borderLeft: mobile ? (i % 3 > 0 ? `1px solid ${C.border}` : "none") : (i > 0 ? `1px solid ${C.border}` : "none"),
-      borderTop: mobile && i >= 3 ? `1px solid ${C.border}` : "none",
+      borderLeft: mobile ? (i % 3 > 0 ? `${C.cardBorder} solid ${C.border}` : "none") : (i > 0 ? `${C.cardBorder} solid ${C.border}` : "none"),
+      borderTop: mobile && i >= 3 ? `${C.cardBorder} solid ${C.border}` : "none",
       color: activeTab === tab.id ? C.btnText : C.dim,
       fontFamily: mono, fontSize: mobile ? "10px" : "13px", letterSpacing: mobile ? "0px" : "1px",
       cursor: "pointer", textTransform: "uppercase", transition: "all 0.15s",
@@ -3601,8 +3685,8 @@
       const canMeet = result && reqFpm !== null ? result.roc >= reqFpm : null;
       return (
       <Card>
-      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.green, marginBottom: "6px" }}>RATE OF CLIMB</div>
+      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `${C.cardBorder} solid ${C.border}` }}>
+      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "6px" }}>RATE OF CLIMB</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", letterSpacing: "2px" }}>MAX CLIMB</div>
       <div style={{ fontSize: "13px", color: C.dimmer, marginTop: "6px", letterSpacing: "1px" }}>FLAPS UP · FULL THROTTLE · 2,550 LB · FIG 5-6</div>
       </div>
@@ -3614,16 +3698,16 @@
       {result && (
       <div style={{ marginTop: "28px" }}>
       <ISABadgeRow label="RESULTS" isaLabel={formatISA(result.isaDeviation)} isaDeviation={result.isaDeviation} isaTemp={result.isaTemp} />
-      <div style={{ background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "28px", textAlign: "center", marginBottom: "12px" }}>
-      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green, marginBottom: "12px" }}>RATE OF CLIMB</div>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "28px", textAlign: "center", marginBottom: "12px" }}>
+      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "12px" }}>RATE OF CLIMB</div>
       <div style={{ fontSize: "60px", color: rocColor, lineHeight: 1, fontWeight: "bold" }}>{result.roc}</div>
       <div style={{ fontSize: "14px", color: C.dimmer, marginTop: "8px", letterSpacing: "3px" }}>FT / MIN</div>
       </div>
-      <div style={{ background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
       <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.dimmer }}>CLIMB RATE</div>
       <div style={{ fontSize: "15px", letterSpacing: "2px", color: rocColor }}>{rocLabel}</div>
       </div>
-      <div style={{ background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
       <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.dimmer }}>CLIMB SPEED</div>
       <div style={{ fontSize: "15px", letterSpacing: "2px", color: C.text }}>{result.climbSpeed} <span style={{ fontSize: "12px", color: C.dim }}>KIAS</span></div>
       </div>
@@ -3631,31 +3715,31 @@
       </div>
       )}
       {/* Gradient checker */}
-      <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.green, marginBottom: "14px" }}>CLIMB GRADIENT CHECKER</div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "1px", marginBottom: "14px" }}>Convert ft/nm departure procedure gradient to required FPM</div>
+      <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: `${C.cardBorder} solid ${C.border}` }}>
+      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "14px" }}>CLIMB GRADIENT CHECKER</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "1px", marginBottom: "14px" }}>Convert ft/nm departure procedure gradient to required FPM</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "14px" }}>
       <div>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>GRADIENT</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>GRADIENT</div>
       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
       <input type="number" value={gradFtNm} onChange={e => setGradFtNm(e.target.value)} placeholder="e.g. 200"
-      style={{ flex: 1, minWidth: 0, background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
-      <div style={{ padding: "10px 8px", background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", color: C.dim, fontSize: "11px", letterSpacing: "1px", flexShrink: 0 }}>FT/NM</div>
+      style={{ flex: 1, minWidth: 0, background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      <div style={{ padding: "10px 8px", background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", color: C.dim, fontSize: "11px", letterSpacing: "1px", flexShrink: 0 }}>FT/NM</div>
       </div>
       </div>
       <div>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>GROUNDSPEED</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>GROUNDSPEED</div>
       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
       <input type="number" value={gradGs} onChange={e => setGradGs(e.target.value)} placeholder="e.g. 90"
-      style={{ flex: 1, minWidth: 0, background: C.input, border: `1px solid ${C.border}`, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
-      <div style={{ padding: "10px 8px", background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", color: C.dim, fontSize: "11px", letterSpacing: "1px", flexShrink: 0 }}>KT</div>
+      style={{ flex: 1, minWidth: 0, background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      <div style={{ padding: "10px 8px", background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", color: C.dim, fontSize: "11px", letterSpacing: "1px", flexShrink: 0 }}>KT</div>
       </div>
       </div>
       </div>
       {reqFpm !== null && (
       <div style={{ background: C.input, border: `2px solid ${canMeet === null ? C.border : canMeet ? C.green : C.error}`, borderRadius: "4px", overflow: "hidden" }}>
-      <div style={{ padding: "16px", textAlign: "center", borderBottom: `1px solid ${C.borderDim}` }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>REQUIRED CLIMB RATE</div>
+      <div style={{ padding: "16px", textAlign: "center", borderBottom: `${C.cardBorder} solid ${C.borderDim}` }}>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>REQUIRED CLIMB RATE</div>
       <div style={{ fontSize: "48px", fontWeight: "bold", color: C.text, lineHeight: 1 }}>{reqFpm}</div>
       <div style={{ fontSize: "13px", color: C.dim, marginTop: "6px", letterSpacing: "2px" }}>FT / MIN</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "4px" }}>{gradFtNm} ft/nm × {gradGs} kt ÷ 60</div>
@@ -3753,8 +3837,8 @@
       }, [departAlt, cruiseAlt, oatDep, oatCruise, tempUnit]);
       return (
       <Card>
-      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.green, marginBottom: "6px" }}>TIME · FUEL · DISTANCE TO CLIMB</div>
+      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `${C.cardBorder} solid ${C.border}` }}>
+      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "6px" }}>TIME · FUEL · DISTANCE TO CLIMB</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", letterSpacing: "2px" }}>CLIMB PLANNING</div>
       <div style={{ fontSize: "13px", color: C.dimmer, marginTop: "6px", letterSpacing: "1px" }}>FLAPS UP · FULL THROTTLE · 2,550 LB · FIG 5-7</div>
       </div>
@@ -3780,7 +3864,7 @@
       <ResultCard label="FUEL" value={result.fuelGal.toFixed(1)} unit="GAL" color={C.green} />
       <ResultCard label="DIST" value={result.distNM.toFixed(1)} unit="NM" color={C.green} />
       </div>
-      <div style={{ background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
       <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.dimmer }}>CLIMB SPEED</div>
       <div style={{ fontSize: "15px", color: C.text }}>{result.climbSpeed} <span style={{ fontSize: "12px", color: C.dim }}>KIAS</span></div>
       </div>
@@ -3960,8 +4044,8 @@
       const maxPowerWarning = result && result.pct > 75;
       return (
       <Card>
-      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.green, marginBottom: "6px" }}>CRUISE PERFORMANCE</div>
+      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `${C.cardBorder} solid ${C.border}` }}>
+      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "6px" }}>CRUISE PERFORMANCE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", letterSpacing: "2px" }}>CRUISE</div>
       <div style={{ fontSize: "13px", color: C.dimmer, marginTop: "6px", letterSpacing: "1px" }}>REC. LEAN MIXTURE · 2,550 LB · FIG 5-8</div>
       </div>
@@ -3969,7 +4053,7 @@
       <AltOATRow altLabel="CRUISE PRESS. ALT." altValue={alt} onAltChange={setAlt} altHint="2,000 – 12,000 ft" altPlaceholder="e.g. 6000" oatValue={oat} onOatChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} />
       <InputField label="RPM" unit="RPM" value={rpm} onChange={setRpm} placeholder="e.g. 2500" hint="2,100 – 2,700 RPM" />
       <div>
-      <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px" }}>SPEED FAIRINGS</div>
+      <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.isLight ? C.dim : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px" }}>SPEED FAIRINGS</div>
       <div style={{ display: "flex", gap: "8px" }}>
       {[{val:true,label:"INSTALLED"},{val:false,label:"NOT INSTALLED"}].map(opt => (
       <button key={String(opt.val)} onClick={() => setSpeedFairings(opt.val)} style={{
@@ -4009,26 +4093,26 @@
       const hrs = Math.floor(endurance), mins = Math.round((endurance - hrs) * 60);
       const allPower = [75,65,55,45].map(p => ({ p, e: calculateC172Endurance(result.altFt, p) }));
       return (
-      <div style={{ background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "14px 16px", marginBottom: "12px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.dim, marginBottom: "10px" }}>ENDURANCE · FIG 5-10 · 45 MIN RESERVE · STD TEMP</div>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "14px 16px", marginBottom: "12px" }}>
+      <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "10px" }}>ENDURANCE · FIG 5-10 · 45 MIN RESERVE · STD TEMP</div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
       <div style={{ fontSize: "13px", letterSpacing: "1px", color: C.dimmer }}>AT {clampedPct}% MCP</div>
       <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
       <div style={{ textAlign: "right" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "2px" }}>ENDURANCE</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "2px" }}>ENDURANCE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: C.green }}>
       {hrs}<span style={{ fontSize: "14px", color: C.dim }}>h</span> {String(mins).padStart(2,'0')}<span style={{ fontSize: "14px", color: C.dim }}>m</span>
       </div>
       </div>
       <div style={{ textAlign: "right" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "2px" }}>RANGE</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "2px" }}>RANGE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: C.green }}>
       {Math.round(calculateC172Range(result.altFt, clampedPct))}<span style={{ fontSize: "14px", color: C.dim, marginLeft: "3px" }}>NM</span>
       </div>
       </div>
       </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "6px", borderTop: `1px solid ${C.borderDim}`, paddingTop: "10px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "6px", borderTop: `${C.cardBorder} solid ${C.borderDim}`, paddingTop: "10px" }}>
       {allPower.map(({ p, e }) => {
       const h=Math.floor(e), m=Math.round((e-h)*60);
       const r=Math.round(calculateC172Range(result.altFt, p));
@@ -4211,13 +4295,13 @@
       }
       const wc = result.windComponents;
       return (
-      <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:"4px", padding:"14px 14px 10px", marginBottom:"14px" }}>
+      <div style={{ background:C.card, border:`${C.cardBorder} solid ${C.border}`, borderRadius:"4px", padding:"14px 14px 10px", marginBottom:"14px" }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px" }}>
       <div style={{ fontSize:"15px", letterSpacing:"3px", color:C.green }}>FLAPS 10° TAKEOFF</div>
       <div style={{ fontSize:"13px", letterSpacing:"2px", color:C.dimmer }}>FULL THROTTLE · PAVED/LEVEL/DRY</div>
       </div>
       <svg viewBox="0 0 460 165" style={{ width:"100%", display:"block" }}>
-      <rect x="0" y="0" width="460" height="165" fill={C.card} />
+      <rect x="0" y="0" width="460" height="165" fill={C.isLight ? C.rwyBg : C.card} />
       <defs>
       <linearGradient id="rwyGradC172" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stopColor={C.rwyAsphalt}/>
@@ -4359,8 +4443,8 @@
       const markerColorRoll = C.green, markerColor50 = C.warm;
       return (
       <Card>
-      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `1px solid ${C.border}` }}>
-      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.green, marginBottom: "6px" }}>TAKEOFF PERFORMANCE</div>
+      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: `${C.cardBorder} solid ${C.border}` }}>
+      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "6px" }}>TAKEOFF PERFORMANCE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", letterSpacing: "2px" }}>SHORT FIELD</div>
       <div style={{ fontSize: "13px", color: C.dimmer, marginTop: "6px", letterSpacing: "1px" }}>FLAPS 10° · FULL THROTTLE · PAVED/LEVEL/DRY · FIG 5-5</div>
       </div>
@@ -4394,10 +4478,10 @@
                 }, React.createElement("span", null, "↓"), React.createElement("span", null, "FETCH FROM W&B  —  TAKEOFF " + tow.toLocaleString() + " LB"));
               })()}
       <div>
-      <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px", display:"flex", alignItems:"center", gap:"8px" }}>WIND{metarFilled.includes("wind") && <span style={{ fontSize:"11px", background:C.green, color:C.btnText, borderRadius:"3px", padding:"2px 6px", letterSpacing:"1px", fontWeight:"bold" }}>✓ METAR</span>}</div>
+      <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.isLight ? C.dim : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px", display:"flex", alignItems:"center", gap:"8px" }}>WIND{metarFilled.includes("wind") && <span style={{ fontSize:"11px", background:C.green, color:C.btnText, borderRadius:"3px", padding:"2px 6px", letterSpacing:"1px", fontWeight:"bold" }}>✓ METAR</span>}</div>
       <Grid3 style={{ marginBottom: "8px" }}>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
       {airportRunways.length > 0 ? (
       <div style={{ display:"flex", flexWrap:"wrap", gap:"5px" }}>
       {(() => {
@@ -4435,18 +4519,18 @@
       </div>
       ) : (
       <input type="number" value={runway} onChange={e => { setRunway(e.target.value.slice(0,2)); setRunwayFull(""); }} placeholder="e.g. 28"
-      style={{ width:"100%", boxSizing:"border-box", background:C.input, border:`1px solid ${C.border}`, borderRadius:"3px", padding:"11px 14px", color:C.text, fontFamily:mono, fontSize:"18px" }} />
+      style={{ width:"100%", boxSizing:"border-box", background:C.input, border:`${C.cardBorder} solid ${C.border}`, borderRadius:"3px", padding:"11px 14px", color:C.text, fontFamily:mono, fontSize:"18px" }} />
       )}
       </div>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>WIND DIR °</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>WIND DIR °</div>
       <input type="number" value={windHeading} onChange={e => setWindHeading(e.target.value)} placeholder="e.g. 270"
-      style={{ width:"100%", boxSizing:"border-box", background:C.input, border:`1px solid ${C.border}`, borderRadius:"3px", padding:"11px 14px", color:C.text, fontFamily:mono, fontSize:"18px" }} />
+      style={{ width:"100%", boxSizing:"border-box", background:C.input, border:`${C.cardBorder} solid ${C.border}`, borderRadius:"3px", padding:"11px 14px", color:C.text, fontFamily:mono, fontSize:"18px" }} />
       </div>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>SPEED KT</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>SPEED KT</div>
       <input type="number" value={windSpeed} onChange={e => setWindSpeed(e.target.value)} placeholder="e.g. 10"
-      style={{ width:"100%", boxSizing:"border-box", background:C.input, border:`1px solid ${C.border}`, borderRadius:"3px", padding:"11px 14px", color:C.text, fontFamily:mono, fontSize:"18px" }} />
+      style={{ width:"100%", boxSizing:"border-box", background:C.input, border:`${C.cardBorder} solid ${C.border}`, borderRadius:"3px", padding:"11px 14px", color:C.text, fontFamily:mono, fontSize:"18px" }} />
       </div>
       </Grid3>
       {windComponents && (() => {
@@ -4597,17 +4681,17 @@
       </div>
       <div style={{ display: "flex", borderBottom: "1px solid " + col + "22" }}>
       <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: "1px solid " + col + "22" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>RWY {rwy.num} AVAILABLE</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>RWY {rwy.num} AVAILABLE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: C.text, lineHeight: 1 }}>{len.toLocaleString()}</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "3px", letterSpacing: "1px" }}>FT</div>
       </div>
       {gr > 0 && <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: d50 > 0 ? "1px solid " + col + "22" : "none" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>GND ROLL x1.5</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>GND ROLL x1.5</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: gr15ok ? C.text : C.error, lineHeight: 1 }}>{gr15.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: gr15ok ? C.warm : C.error, marginTop: "3px" }}>{Math.round(gr15/len*100)}% of runway</div>
       </div>}
       {d50 > 0 && <div style={{ flex: 1, padding: "14px 10px", textAlign: "center" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>50FT DISTANCE</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>50FT DISTANCE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: d50ok ? C.text : C.error, lineHeight: 1 }}>{d50.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: d50ok ? C.warm : C.error, marginTop: "3px" }}>{Math.round(d50/len*100)}% of runway</div>
       </div>}
@@ -4620,7 +4704,7 @@
       );
       })()}
       {/* Speeds */}
-      <div style={{ background:C.input, border:`1px solid ${C.borderDim}`, borderRadius:"3px", padding:"12px 16px", marginBottom:"12px", display:"flex", justifyContent:"space-around", alignItems:"center" }}>
+      <div style={{ background:C.input, border:`${C.cardBorder} solid ${C.borderDim}`, borderRadius:"3px", padding:"12px 16px", marginBottom:"12px", display:"flex", justifyContent:"space-around", alignItems:"center" }}>
       <div style={{ textAlign:"center" }}>
       <div style={{ fontSize:"11px", letterSpacing:"2px", color:C.dim, marginBottom:"4px" }}>LIFTOFF</div>
       <div style={{ fontSize:"28px", fontWeight:"bold", color:markerColorRoll }}>{result.liftoffSpeed}<span style={{ fontSize:"13px", color:C.dim, marginLeft:"4px" }}>KIAS</span></div>
@@ -4741,13 +4825,13 @@
       angle = -2;
       }
       return (
-      <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:"4px", padding:"14px 14px 10px", marginBottom:"14px" }}>
+      <div style={{ background:C.card, border:`${C.cardBorder} solid ${C.border}`, borderRadius:"4px", padding:"14px 14px 10px", marginBottom:"14px" }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px" }}>
       <div style={{ fontSize:"15px", letterSpacing:"3px", color:C.green }}>SHORT FIELD LANDING</div>
       <div style={{ fontSize:"13px", letterSpacing:"2px", color:C.dimmer }}>FLAPS {result.flaps==="up"?"UP":"FULL"} · IDLE · MAX BRAKING</div>
       </div>
       <svg viewBox="0 0 460 165" style={{ width:"100%", display:"block" }}>
-      <rect x="0" y="0" width="460" height="165" fill={C.card} />
+      <rect x="0" y="0" width="460" height="165" fill={C.isLight ? C.rwyBg : C.card} />
       <defs>
       <linearGradient id="rwyGradC172Ldg" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stopColor={C.rwyBg}/>
@@ -4873,7 +4957,7 @@
       const cRoll=C.green, c50=C.warm;
       return (
       <Card>
-      <div style={{ marginBottom:"28px", paddingBottom:"20px", borderBottom:`1px solid ${C.border}` }}>
+      <div style={{ marginBottom:"28px", paddingBottom:"20px", borderBottom:`${C.cardBorder} solid ${C.border}` }}>
       <div style={{ fontSize:"12px", letterSpacing:"4px", color:C.green, marginBottom:"6px" }}>LANDING PERFORMANCE</div>
       <div style={{ fontSize:"28px", fontWeight:"bold", letterSpacing:"2px" }}>SHORT FIELD</div>
       <div style={{ fontSize:"13px", color:C.dimmer, marginTop:"6px", letterSpacing:"1px" }}>FLAPS FULL · IDLE POWER · 2,550 LB · FIG 5-11</div>
@@ -4931,18 +5015,18 @@
       </div>
       ) : (
       <input type="number" value={runway} onChange={e=>{ setRunway(e.target.value.slice(0,2)); setRunwayFull(""); }} placeholder="e.g. 28"
-      style={{ width:"100%", boxSizing:"border-box", background:C.input, border:`1px solid ${C.border}`, borderRadius:"3px", padding:"11px 14px", color:C.text, fontFamily:mono, fontSize:"18px" }}/>
+      style={{ width:"100%", boxSizing:"border-box", background:C.input, border:`${C.cardBorder} solid ${C.border}`, borderRadius:"3px", padding:"11px 14px", color:C.text, fontFamily:mono, fontSize:"18px" }}/>
       )}
       </div>
       <div>
       <div style={{ fontSize:"11px", color:C.dim, letterSpacing:"2px", marginBottom:"4px" }}>WIND DIR °</div>
       <input type="number" value={windHeading} onChange={e=>setWindHeading(e.target.value)} placeholder="e.g. 270"
-      style={{ width:"100%", boxSizing:"border-box", background:C.input, border:`1px solid ${C.border}`, borderRadius:"3px", padding:"11px 14px", color:C.text, fontFamily:mono, fontSize:"18px" }}/>
+      style={{ width:"100%", boxSizing:"border-box", background:C.input, border:`${C.cardBorder} solid ${C.border}`, borderRadius:"3px", padding:"11px 14px", color:C.text, fontFamily:mono, fontSize:"18px" }}/>
       </div>
       <div>
       <div style={{ fontSize:"11px", color:C.dim, letterSpacing:"2px", marginBottom:"4px" }}>SPEED KT</div>
       <input type="number" value={windSpeed} onChange={e=>setWindSpeed(e.target.value)} placeholder="e.g. 10"
-      style={{ width:"100%", boxSizing:"border-box", background:C.input, border:`1px solid ${C.border}`, borderRadius:"3px", padding:"11px 14px", color:C.text, fontFamily:mono, fontSize:"18px" }}/>
+      style={{ width:"100%", boxSizing:"border-box", background:C.input, border:`${C.cardBorder} solid ${C.border}`, borderRadius:"3px", padding:"11px 14px", color:C.text, fontFamily:mono, fontSize:"18px" }}/>
       </div>
       </Grid3>
       {windComponents && (() => {
@@ -5063,7 +5147,7 @@
       ))}
       </Grid2>
       {/* Approach speed */}
-      <div style={{ background:C.input, border:`1px solid ${C.borderDim}`, borderRadius:"3px", padding:"12px 16px", marginBottom:"12px", textAlign:"center" }}>
+      <div style={{ background:C.input, border:`${C.cardBorder} solid ${C.borderDim}`, borderRadius:"3px", padding:"12px 16px", marginBottom:"12px", textAlign:"center" }}>
       <div style={{ fontSize:"11px", letterSpacing:"2px", color:C.dim, marginBottom:"4px" }}>APPROACH SPEED AT 50 FT</div>
       <div style={{ fontSize:"32px", fontWeight:"bold", color:cRoll }}>{result.approachSpeed}<span style={{ fontSize:"13px", color:C.dim, marginLeft:"4px" }}>KIAS</span></div>
       {result.flapsAdj>0 && <div style={{ fontSize:"11px", color:C.warm, marginTop:"4px", letterSpacing:"1px" }}>FLAPS UP — +9 KIAS FROM NORMAL 61 KIAS</div>}
@@ -5095,17 +5179,17 @@
       </div>
       <div style={{ display: "flex", borderBottom: "1px solid " + col + "22" }}>
       <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: "1px solid " + col + "22" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>RWY {rwy.num} AVAILABLE</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>RWY {rwy.num} AVAILABLE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: C.text, lineHeight: 1 }}>{len.toLocaleString()}</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "3px", letterSpacing: "1px" }}>FT</div>
       </div>
       {gr > 0 && <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: d50 > 0 ? "1px solid " + col + "22" : "none" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>GND ROLL x1.5</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>GND ROLL x1.5</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: gr15ok ? C.text : C.error, lineHeight: 1 }}>{gr15.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: gr15ok ? C.warm : C.error, marginTop: "3px" }}>{Math.round(gr15/len*100)}% of runway</div>
       </div>}
       {d50 > 0 && <div style={{ flex: 1, padding: "14px 10px", textAlign: "center" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>50FT DISTANCE</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>50FT DISTANCE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: d50ok ? C.text : C.error, lineHeight: 1 }}>{d50.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: d50ok ? C.warm : C.error, marginTop: "3px" }}>{Math.round(d50/len*100)}% of runway</div>
       </div>}
@@ -5162,23 +5246,23 @@
       : null;
       return (
       <Card>
-      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.green, marginBottom: "24px" }}>SPEEDS REFERENCE</div>
+      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "700" : "normal", marginBottom: "24px" }}>SPEEDS REFERENCE</div>
       {/* ── MANEUVERING SPEED ── */}
       <div style={{ marginBottom: "28px" }}>
-      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.green, marginBottom: "14px", borderBottom: "1px solid " + C.border, paddingBottom: "8px" }}>MANEUVERING SPEED (Va)</div>
+      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "14px", borderBottom: C.cardBorder + " solid " + C.border, paddingBottom: "8px" }}>MANEUVERING SPEED (Va)</div>
       <div style={{ fontSize: "12px", color: C.dim, letterSpacing: "1px", marginBottom: "12px" }}>Va = 105 KIAS at 2,550 lb · scales with √(W/2550)</div>
       <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", marginBottom: "12px" }}>
       <div style={{ flex: 1 }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>GROSS WEIGHT</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>GROSS WEIGHT</div>
       <input
       type="number"
       value={weight}
       onChange={e => setWeight(e.target.value)}
       placeholder="e.g. 2200"
-      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }}
+      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }}
       />
       </div>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, paddingBottom: "14px" }}>LBS</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", paddingBottom: "14px" }}>LBS</div>
       </div>
       {va !== null ? (
       <div style={{ background: C.input, border: "2px solid " + C.cool, borderRadius: "4px", padding: "20px", textAlign: "center" }}>
@@ -5188,7 +5272,7 @@
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "8px" }}>Do not make full or abrupt control inputs above this speed</div>
       </div>
       ) : (
-      <div style={{ background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "16px", textAlign: "center", color: C.dim, fontSize: "12px", letterSpacing: "1px" }}>
+      <div style={{ background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "16px", textAlign: "center", color: C.dim, fontSize: "12px", letterSpacing: "1px" }}>
       Enter weight above to calculate Va · Max 2,550 lb
       </div>
       )}
@@ -5200,10 +5284,10 @@
       </div>
       {/* ── STALL SPEEDS ── */}
       <div>
-      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.green, marginBottom: "14px", borderBottom: "1px solid " + C.border, paddingBottom: "8px" }}>STALL SPEEDS (Vs) · FIG 5-3</div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "1px", marginBottom: "14px" }}>2,550 lb · Idle power · KIAS</div>
+      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "14px", borderBottom: C.cardBorder + " solid " + C.border, paddingBottom: "8px" }}>STALL SPEEDS (Vs) · FIG 5-3</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "1px", marginBottom: "14px" }}>2,550 lb · Idle power · KIAS</div>
       <div style={{ marginBottom: "14px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>CG POSITION</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>CG POSITION</div>
       <div style={{ display: "flex", gap: "8px" }}>
       {[{val:"rearward",label:"MOST REARWARD"},{val:"forward",label:"MOST FORWARD"}].map(opt => (
       <button key={opt.val} onClick={() => setCgPos(opt.val)} style={{
@@ -5216,7 +5300,7 @@
       </div>
       </div>
       <div style={{ marginBottom: "14px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>FLAP SETTING</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>FLAP SETTING</div>
       <div style={{ display: "flex", gap: "8px" }}>
       {flapsOptions.map(opt => (
       <button key={opt.val} onClick={() => setFlaps(opt.val)} style={{
@@ -5229,7 +5313,7 @@
       </div>
       </div>
       <div style={{ marginBottom: "16px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>ANGLE OF BANK</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>ANGLE OF BANK</div>
       <input
       type="range"
       min="0" max="60" step="1"
@@ -5259,10 +5343,10 @@
       </div>
       </div>
       <div style={{ marginBottom: "16px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "8px" }}>ALL CONFIGURATIONS · {cgPos === "rearward" ? "REARWARD" : "FORWARD"} CG</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "8px" }}>ALL CONFIGURATIONS · {cgPos === "rearward" ? "REARWARD" : "FORWARD"} CG</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", gap: "3px", fontSize: "11px" }}>
       {["", "0°", "30°", "45°", "60°"].map((h, i) => (
-      <div key={i} style={{ padding: "5px 3px", textAlign: "center", color: C.dim, letterSpacing: "1px", borderBottom: "1px solid " + C.border }}>{h}</div>
+      <div key={i} style={{ padding: "5px 3px", textAlign: "center", color: C.dim, letterSpacing: "1px", borderBottom: C.cardBorder + " solid " + C.border }}>{h}</div>
       ))}
       {[["up","FLAPS UP"],["10","FLAPS 10"],["full","FLAPS FULL"]].map(([f, label]) => (
       [
@@ -5313,10 +5397,10 @@
       <div style={{ minHeight: "100vh", background: C.bg, fontFamily: mono, color: C.text, display: "flex", flexDirection: "column", alignItems: "center", padding: mobile ? "16px 12px" : "32px 24px" }}>
       {onBack && (
       <div style={{ width: "100%", maxWidth: "860px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <button onClick={onBack} style={{ background: "none", border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
+      <button onClick={onBack} style={{ background: "none", border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
       ← AIRCRAFT
       </button>
-      <button onClick={toggleTheme} style={{ background: "none", border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
+      <button onClick={toggleTheme} style={{ background: "none", border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
       {theme === "dark" ? "☀ LIGHT" : "☾ DARK"}
       </button>
       </div>
@@ -5325,12 +5409,12 @@
       <div style={{ fontSize: mobile ? "11px" : "18px", letterSpacing: mobile ? "3px" : "6px", color: C.green, marginBottom: "6px" }}>CESSNA 172S NAV III · POH PERFORMANCE</div>
       <div style={{ fontSize: mobile ? "22px" : "36px", fontWeight: "bold", letterSpacing: mobile ? "1px" : "3px", textTransform: "uppercase" }}>PERFORMANCE CALCULATOR</div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${tabs.length}, 1fr)`, marginBottom: mobile ? "14px" : "24px", border: `1px solid ${C.border}`, borderRadius: "4px", overflow: "hidden", width: "100%", maxWidth: "860px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${tabs.length}, 1fr)`, marginBottom: mobile ? "14px" : "24px", border: `${C.cardBorder} solid ${C.border}`, borderRadius: "4px", overflow: "hidden", width: "100%", maxWidth: "860px" }}>
       {tabs.map((tab, i) => (
       <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
       padding: mobile ? "10px 4px" : "14px 8px",
       background: activeTab === tab.id ? C.green : C.card,
-      border: "none", borderLeft: i > 0 ? `1px solid ${C.border}` : "none",
+      border: "none", borderLeft: i > 0 ? `${C.cardBorder} solid ${C.border}` : "none",
       color: activeTab === tab.id ? C.btnText : C.dim,
       fontFamily: mono, fontSize: mobile ? "10px" : "15px", letterSpacing: mobile ? "0px" : "2px",
       cursor: "pointer", textTransform: "uppercase", transition: "all 0.15s",
@@ -5582,13 +5666,13 @@ null}
       </div>
       </div>
       )}
-      <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: "4px", padding: "14px 14px 10px", marginBottom: "14px" }}>
+      <div style={{ background: C.card, border: C.cardBorder + " solid " + C.border, borderRadius: "4px", padding: "14px 14px 10px", marginBottom: "14px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-      <div style={{ fontSize: "15px", letterSpacing: "3px", color: C.green }}>FLAPS 40 LANDING</div>
+      <div style={{ fontSize: "15px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal" }}>FLAPS 40 LANDING</div>
       <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.dimmer }}>POWER OFF - FULL STALL - {result.propType === "scimitar" ? "FIG 5-35a" : "FIG 5-35"}</div>
       </div>
       <svg viewBox="0 0 460 165" style={{ width: "100%", display: "block" }}>
-      <rect x="0" y="0" width="460" height="165" fill={C.card} />
+      <rect x="0" y="0" width="460" height="165" fill={C.isLight ? C.rwyBg : C.card} />
       <defs>
       <linearGradient id="rwyGradSemLd" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stopColor={C.rwyAsphalt} />
@@ -5680,7 +5764,7 @@ null}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
       <div style={{ background: C.input, border: "1px solid " + C.green, borderRadius: "3px", padding: "16px", textAlign: "center" }}>
-      <div style={{ fontSize: "15px", letterSpacing: "2px", color: C.green, marginBottom: "8px" }}>GROUND ROLL</div>
+      <div style={{ fontSize: "15px", letterSpacing: "2px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px" }}>GROUND ROLL</div>
       <div style={{ fontSize: "44px", color: C.text, lineHeight: 1, fontWeight: "bold" }}>{result.groundRollFt}</div>
       <div style={{ fontSize: "13px", color: C.dim, marginTop: "6px", letterSpacing: "3px" }}>FEET - FIG 5-37</div>
       </div>
@@ -5694,16 +5778,16 @@ null}
       <div style={{ background: C.input, border: "1px solid " + C.green + "55", borderRadius: "3px", padding: "12px 16px", textAlign: "center" }}>
       <div style={{ fontSize: "12px", letterSpacing: "2px", color: C.green + "99", marginBottom: "6px" }}>GND ROLL x1.5</div>
       <div style={{ fontSize: "32px", color: C.green + "cc", lineHeight: 1, fontWeight: "bold" }}>{Math.round(result.groundRollFt * 1.5)}</div>
-      <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
       </div>
       <div style={{ background: C.input, border: "1px solid " + markerColor50 + "55", borderRadius: "3px", padding: "12px 16px", textAlign: "center" }}>
       <div style={{ fontSize: "12px", letterSpacing: "2px", color: markerColor50 + "99", marginBottom: "6px" }}>OVER 50 FT x1.5</div>
       <div style={{ fontSize: "32px", color: markerColor50 + "cc", lineHeight: 1, fontWeight: "bold" }}>{Math.round(dist50 * 1.5)}</div>
-      <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
       </div>
       </div>
-      <div style={{ background: C.input, border: "1px solid " + C.borderDim, borderRadius: "3px", padding: "10px 16px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim }}>SCHEDULED APPROACH SPEED</div>
+      <div style={{ background: C.input, border: C.cardBorder + " solid " + C.borderDim, borderRadius: "3px", padding: "10px 16px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal" }}>SCHEDULED APPROACH SPEED</div>
       <div><span style={{ fontSize: "28px", fontWeight: "bold", color: C.green }}>{result.approachSpeed}</span><span style={{ fontSize: "13px", color: C.dim, marginLeft: "6px" }}>KIAS</span></div>
       </div>
       {(function() {
@@ -5732,17 +5816,17 @@ null}
       </div>
       <div style={{ display: "flex", borderBottom: "1px solid " + col + "22" }}>
       <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: "1px solid " + col + "22" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>RWY {rwy.num} AVAILABLE</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>RWY {rwy.num} AVAILABLE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: C.text, lineHeight: 1 }}>{len.toLocaleString()}</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "3px", letterSpacing: "1px" }}>FT</div>
       </div>
       <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: "1px solid " + col + "22" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>GND ROLL x1.5</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>GND ROLL x1.5</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: grok ? C.text : C.error, lineHeight: 1 }}>{gr15.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: grok ? pctColor(gr15,len) : C.error, marginTop: "3px" }}>{Math.round(gr15/len*100)}% of runway</div>
       </div>
       <div style={{ flex: 1, padding: "14px 10px", textAlign: "center" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>50FT DIST x1.5</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>50FT DIST x1.5</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: d50ok ? C.text : C.error, lineHeight: 1 }}>{d50x15.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: d50ok ? pctColor(d50x15,len) : C.error, marginTop: "3px" }}>{Math.round(d50x15/len*100)}% of runway</div>
       </div>
@@ -5817,8 +5901,8 @@ null}
       }, [propType]);
       return (
       <Card>
-      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: "1px solid " + C.border }}>
-      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.green, marginBottom: "6px" }}>LANDING PERFORMANCE</div>
+      <div style={{ marginBottom: "28px", paddingBottom: "20px", borderBottom: C.cardBorder + " solid " + C.border }}>
+      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "6px" }}>LANDING PERFORMANCE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", letterSpacing: "2px", color: C.text }}>FLAPS 40</div>
       <div style={{ fontSize: "13px", color: C.dimmer, marginTop: "6px", letterSpacing: "1px" }}>POWER OFF - FULL STALL - MAX BRAKING - PAVED/LEVEL/DRY - {propType === "scimitar" ? "FIG 5-35a" : "FIG 5-35"}</div>
       </div>
@@ -5836,10 +5920,10 @@ null}
       <AltOATRow altLabel="PRESSURE ALTITUDE" altValue={alt} onAltChange={setAlt} altHint="0 – 8,000 ft" altPlaceholder="e.g. 680" altFilled={metarFilled.includes("alt")} oatValue={oat} onOatChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} oatFilled={metarFilled.includes("oat")} />
       <InputField label="GROSS WEIGHT" unit="LBS" value={weight} onChange={setWeight} placeholder="e.g. 3107" hint="2,750 – 3,800 lbs (leave blank for 3,800)" />
       <div>
-      <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>WIND{metarFilled.includes("wind") && React.createElement("span", { style: { fontSize: "11px", background: C.green, color: C.btnText, borderRadius: "3px", padding: "2px 6px", letterSpacing: "1px", fontWeight: "bold" } }, "\u2713 METAR")}</div>
+      <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.isLight ? C.dim : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>WIND{metarFilled.includes("wind") && React.createElement("span", { style: { fontSize: "11px", background: C.green, color: C.btnText, borderRadius: "3px", padding: "2px 6px", letterSpacing: "1px", fontWeight: "bold" } }, "\u2713 METAR")}</div>
       <Grid3 style={{ marginBottom: "8px" }}>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
       {airportRunways.length > 0 ? (
       <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
       {(function() {
@@ -5865,16 +5949,16 @@ null}
       })()}
       </div>
       ) : (
-      React.createElement("input", { type: "number", value: runway, onChange: function(e) { setRunway(e.target.value.slice(0,2)); setRunwayFull(""); }, placeholder: "e.g. 28", style: { width: "100%", boxSizing: "border-box", background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" } })
+      React.createElement("input", { type: "number", value: runway, onChange: function(e) { setRunway(e.target.value.slice(0,2)); setRunwayFull(""); }, placeholder: "e.g. 28", style: { width: "100%", boxSizing: "border-box", background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" } })
       )}
       </div>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>WIND DIR °</div>
-      <input type="number" value={windHeading} onChange={function(e){setWindHeading(e.target.value);}} placeholder="e.g. 270" style={{ width: "100%", boxSizing: "border-box", background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>WIND DIR °</div>
+      <input type="number" value={windHeading} onChange={function(e){setWindHeading(e.target.value);}} placeholder="e.g. 270" style={{ width: "100%", boxSizing: "border-box", background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       </div>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>SPEED KT</div>
-      <input type="number" value={windSpeed} onChange={function(e){setWindSpeed(e.target.value);}} placeholder="e.g. 10" style={{ width: "100%", boxSizing: "border-box", background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>SPEED KT</div>
+      <input type="number" value={windSpeed} onChange={function(e){setWindSpeed(e.target.value);}} placeholder="e.g. 10" style={{ width: "100%", boxSizing: "border-box", background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       </div>
       </Grid3>
       {windComponents && (function() {
@@ -5891,7 +5975,7 @@ null}
       )
       );
       })()}
-      <div style={{ fontSize: "13px", color: C.dimmest, marginTop: "6px", letterSpacing: "1px" }}>Chart limit: 30kt headwind · 10kt tailwind</div>
+      <div style={{ fontSize: "13px", color: C.isLight ? C.dimmer : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "6px", letterSpacing: "1px" }}>Chart limit: 30kt headwind · 10kt tailwind</div>
       </div>
       </div>
       {error && <ErrorBox msg={error} />}
@@ -6061,12 +6145,12 @@ null}
       }, [departAlt, cruiseAlt, destAlt, oatDep, oatCruise, oatDest, tempUnit, showDescent]);
       return (
       <Card>
-      <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: "1px solid " + C.border }}>
-      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.green, marginBottom: "4px" }}>TIME, FUEL & DISTANCE</div>
+      <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: C.cardBorder + " solid " + C.border }}>
+      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "700" : "normal", marginBottom: "4px" }}>TIME, FUEL & DISTANCE</div>
       <div style={{ fontSize: "13px", color: C.dimmer, letterSpacing: "1px" }}>FIG 5-23 / 5-33</div>
       </div>
-      <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: "1px solid " + C.border }}>
-      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.green, marginBottom: "10px" }}>CLIMB · 88 KIAS · 2700 RPM · FIG 5-23</div>
+      <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: C.cardBorder + " solid " + C.border }}>
+      <div style={{ fontSize: "12px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "10px" }}>CLIMB · 88 KIAS · 2700 RPM · FIG 5-23</div>
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
       <AltOATRow altLabel="DEPARTURE ALT." altValue={departAlt} onAltChange={setDepartAlt} altHint="0 - 14,000 ft" altPlaceholder="e.g. 1250" oatValue={oatDep} onOatChange={setOatDep} unit={tempUnit} onUnitChange={setTempUnit} />
       <AltOATRow altLabel="CRUISE ALT." altValue={cruiseAlt} onAltChange={setCruiseAlt} altHint="Above departure" altPlaceholder="e.g. 5500" oatValue={oatCruise} onOatChange={setOatCruise} unit={tempUnit} onUnitChange={setTempUnit} />
@@ -6086,13 +6170,13 @@ null}
       {result && (
       <div style={{ marginTop: "28px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.green }}>RESULTS</div>
+      <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal" }}>RESULTS</div>
       <div style={{ display: "flex", gap: "6px" }}>
-      <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevDep > 5 ? C.warm : result.isaDevDep < -5 ? C.cool : C.dim, background: C.input, border: "1px solid " + C.border, padding: "3px 8px", borderRadius: "2px" }}>DEP {formatISA(result.isaDevDep)}</div>
-      <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevCruise > 5 ? C.warm : result.isaDevCruise < -5 ? C.cool : C.dim, background: C.input, border: "1px solid " + C.border, padding: "3px 8px", borderRadius: "2px" }}>CRZ {formatISA(result.isaDevCruise)}</div>
+      <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevDep > 5 ? C.warm : result.isaDevDep < -5 ? C.cool : C.dim, background: C.input, border: C.cardBorder + " solid " + C.border, padding: "3px 8px", borderRadius: "2px" }}>DEP {formatISA(result.isaDevDep)}</div>
+      <div style={{ fontSize: "13px", letterSpacing: "1px", color: result.isaDevCruise > 5 ? C.warm : result.isaDevCruise < -5 ? C.cool : C.dim, background: C.input, border: C.cardBorder + " solid " + C.border, padding: "3px 8px", borderRadius: "2px" }}>CRZ {formatISA(result.isaDevCruise)}</div>
       </div>
       </div>
-      <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.green, marginBottom: "8px" }}>CLIMB · FIG 5-23</div>
+      <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px" }}>CLIMB · FIG 5-23</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "12px" }}>
       <ResultCard label="TIME" value={result.timeMin.toFixed(1)} unit="MIN" color={C.green} />
       <ResultCard label="FUEL" value={result.fuelGal.toFixed(1)} unit="GAL" color={C.green} />
@@ -6280,8 +6364,8 @@ null}
       const altHints = { 55: "0 – 14,000 ft", 65: "0 – 10,000 ft", 75: "0 – 7,000 ft" };
       return (
       <Card>
-      <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: "1px solid " + C.border }}>
-      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.green, marginBottom: "4px" }}>FUEL & POWER SETTING</div>
+      <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: C.cardBorder + " solid " + C.border }}>
+      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "700" : "normal", marginBottom: "4px" }}>FUEL & POWER SETTING</div>
       <div style={{ fontSize: "13px", color: C.dimmer, letterSpacing: "1px" }}>BOTH ENGINES · FIG 5-25</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "24px" }}>
@@ -6306,25 +6390,25 @@ null}
       ) : (
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "12px" }}>
       <div style={{ background: C.input, border: "1px solid " + C.green, borderRadius: "3px", padding: "16px", textAlign: "center" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>MAN. PRESSURE</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>MAN. PRESSURE</div>
       <div style={{ fontSize: "36px", fontWeight: "bold", color: C.text, lineHeight: 1 }}>{result.mapAdj}</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "4px", letterSpacing: "1px" }}>IN. HG</div>
       </div>
       <div style={{ background: C.input, border: "1px solid " + C.cool, borderRadius: "3px", padding: "16px", textAlign: "center" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>TRUE AIRSPEED</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>TRUE AIRSPEED</div>
       <div style={{ fontSize: "36px", fontWeight: "bold", color: C.cool, lineHeight: 1 }}>{result.tas != null ? result.tas : "—"}</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "4px", letterSpacing: "1px" }}>KTAS</div>
       </div>
-      <div style={{ background: C.input, border: "1px solid " + C.borderDim, borderRadius: "3px", padding: "16px", textAlign: "center" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>FUEL FLOW</div>
+      <div style={{ background: C.input, border: C.cardBorder + " solid " + C.borderDim, borderRadius: "3px", padding: "16px", textAlign: "center" }}>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>FUEL FLOW</div>
       <div style={{ fontSize: "36px", fontWeight: "bold", color: C.text, lineHeight: 1 }}>{result.gph}</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "4px", letterSpacing: "1px" }}>GPH PER ENGINE</div>
       </div>
       </div>
       )}
       {/* Range & Endurance table */}
-      <div style={{ background: C.input, border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "12px 14px", marginTop: "12px" }}>
-      <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.green, marginBottom: "10px" }}>
+      <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "12px 14px", marginTop: "12px" }}>
+      <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "10px" }}>
       ENDURANCE & RANGE · 45 MIN RESERVE · {result.mixture === "perf" ? "PERF CRUISE" : "ECON CRUISE"}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "6px", marginBottom: "6px" }}>
@@ -6787,7 +6871,7 @@ null}
       return (
       <div style={{ background: C.input, border: `1px solid ${daColor}55`, borderRadius: "3px", padding: "10px 16px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <div>
-      <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.dim, marginBottom: "2px" }}>DENSITY ALTITUDE</div>
+      <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "2px" }}>DENSITY ALTITUDE</div>
       <div style={{ fontSize: "11px", letterSpacing: "1px", color: daColor }}>{daLabel}</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "2px" }}>+{diff.toLocaleString()} ft above pressure alt</div>
       </div>
@@ -6798,9 +6882,9 @@ null}
       </div>
       );
       })()}
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: "4px", padding: "14px 14px 10px", marginBottom: "14px" }}>
+      <div style={{ background: C.card, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "4px", padding: "14px 14px 10px", marginBottom: "14px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-      <div style={{ fontSize: "15px", letterSpacing: "3px", color: C.green }}>FLAPS 25 deg TAKEOFF</div>
+      <div style={{ fontSize: "15px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal" }}>FLAPS 25 deg TAKEOFF</div>
       <div style={{ fontSize: "13px", letterSpacing: "2px", color: C.dimmer }}>FULL THROTTLE . PAVED/LEVEL/DRY . A/C OFF</div>
       </div>
       <svg viewBox="0 0 460 185" style={{ width: "100%", display: "block" }}>
@@ -6842,10 +6926,10 @@ null}
       const cx = (18 + xGr) / 2;
       return (
       <>
-      <line x1="18" y1="75" x2={xGr} y2="75" stroke={markerColorRoll} strokeWidth="1" opacity="0.7" />
-      <line x1="18" y1="72" x2="18" y2="78" stroke={markerColorRoll} strokeWidth="1" />
-      <line x1={xGr} y1="72" x2={xGr} y2="78" stroke={markerColorRoll} strokeWidth="1" />
-      <rect x={cx - boxW/2} y="61" width={boxW} height="15" rx="2" fill={C.markerBg} stroke={markerColorRoll} strokeWidth="0.8" />
+      <line x1="18" y1="75" x2={xGr} y2="75" stroke={markerColorRoll} strokeWidth={C.isLight ? "2" : "1"} opacity={C.isLight ? "0.9" : "0.7"} />
+      <line x1="18" y1="72" x2="18" y2="78" stroke={markerColorRoll} strokeWidth={C.isLight ? "2" : "1"} />
+      <line x1={xGr} y1="72" x2={xGr} y2="78" stroke={markerColorRoll} strokeWidth={C.isLight ? "2" : "1"} />
+      <rect x={cx - boxW/2} y="61" width={boxW} height="15" rx="2" fill={C.markerBg} stroke={markerColorRoll} strokeWidth={C.isLight ? "1.5" : "0.8"} />
       <text x={cx} y="72" textAnchor="middle" fill={markerColorRoll} fontSize="11" fontFamily="Courier New">{label}</text>
       </>
       );
@@ -6864,10 +6948,10 @@ null}
       const cx = (18 + x50) / 2;
       return (
       <>
-      <line x1="18" y1="122" x2={x50} y2="122" stroke={markerColor50} strokeWidth="1" opacity="0.7" />
-      <line x1="18" y1="119" x2="18" y2="125" stroke={markerColor50} strokeWidth="1" />
-      <line x1={x50} y1="119" x2={x50} y2="125" stroke={markerColor50} strokeWidth="1" />
-      <rect x={cx - boxW/2} y="127" width={boxW} height="15" rx="2" fill={C.markerBg} stroke={markerColor50} strokeWidth="0.8" />
+      <line x1="18" y1="122" x2={x50} y2="122" stroke={markerColor50} strokeWidth={C.isLight ? "2" : "1"} opacity={C.isLight ? "0.9" : "0.7"} />
+      <line x1="18" y1="119" x2="18" y2="125" stroke={markerColor50} strokeWidth={C.isLight ? "2" : "1"} />
+      <line x1={x50} y1="119" x2={x50} y2="125" stroke={markerColor50} strokeWidth={C.isLight ? "2" : "1"} />
+      <rect x={cx - boxW/2} y="127" width={boxW} height="15" rx="2" fill={C.markerBg} stroke={markerColor50} strokeWidth={C.isLight ? "1.5" : "0.8"} />
       <text x={cx} y="138" textAnchor="middle" fill={markerColor50} fontSize="11" fontFamily="Courier New">{label}</text>
       </>
       );
@@ -6992,17 +7076,17 @@ null}
       <div style={{ background: C.input, border: `1px solid ${markerColorRoll}55`, borderRadius: "3px", padding: "12px 16px", textAlign: "center" }}>
       <div style={{ fontSize: "12px", letterSpacing: "2px", color: `${markerColorRoll}99`, marginBottom: "6px" }}>GROUND ROLL x1.5</div>
       <div style={{ fontSize: "32px", color: `${markerColorRoll}cc`, lineHeight: 1, fontWeight: "bold" }}>{Math.round(distGr * 1.5)}</div>
-      <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
       </div>
       <div style={{ background: C.input, border: `1px solid ${markerColor50}55`, borderRadius: "3px", padding: "12px 16px", textAlign: "center" }}>
       <div style={{ fontSize: "12px", letterSpacing: "2px", color: `${markerColor50}99`, marginBottom: "6px" }}>OVER 50 FT x1.5</div>
       <div style={{ fontSize: "32px", color: `${markerColor50}cc`, lineHeight: 1, fontWeight: "bold" }}>{Math.round(dist50 * 1.5)}</div>
-      <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
       </div>
       <div style={{ background: C.input, border: `1px solid ${C.cool}55`, borderRadius: "3px", padding: "12px 16px", textAlign: "center" }}>
       <div style={{ fontSize: "12px", letterSpacing: "2px", color: `${C.cool}99`, marginBottom: "6px" }}>ACCEL-STOP x1.5</div>
       <div style={{ fontSize: "32px", color: `${C.cool}cc`, lineHeight: 1, fontWeight: "bold" }}>{Math.round(result.accelStopFt * 1.5)}</div>
-      <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "5px", letterSpacing: "2px" }}>FEET</div>
       </div>
       </Grid3>
       {(function() {
@@ -7042,22 +7126,22 @@ null}
       </div>
       <div style={{ display: "flex", borderBottom: "1px solid " + col + "22" }}>
       <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: "1px solid " + col + "22" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>RWY {rwy.num} AVAILABLE</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>RWY {rwy.num} AVAILABLE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: C.text, lineHeight: 1 }}>{len.toLocaleString()}</div>
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "3px", letterSpacing: "1px" }}>FT</div>
       </div>
       {gr > 0 && <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: "1px solid " + col + "22" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>GND ROLL x1.5</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>GND ROLL x1.5</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: gr15ok ? C.text : C.error, lineHeight: 1 }}>{gr15.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: gr15ok ? pctColor(gr15, len) : C.error, marginTop: "3px" }}>{Math.round(gr15/len*100)}% of runway</div>
       </div>}
       {d50 > 0 && <div style={{ flex: 1, padding: "14px 10px", textAlign: "center", borderRight: as > 0 ? "1px solid " + col + "22" : "none" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>50FT DIST x1.5</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>50FT DIST x1.5</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: d50ok ? C.text : C.error, lineHeight: 1 }}>{d5015.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: d50ok ? pctColor(d5015, len) : C.error, marginTop: "3px" }}>{Math.round(d5015/len*100)}% of runway</div>
       </div>}
       {as > 0 && <div style={{ flex: 1, padding: "14px 10px", textAlign: "center" }}>
-      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>ACCEL-STOP x1.5</div>
+      <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "4px" }}>ACCEL-STOP x1.5</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: asok ? C.text : C.error, lineHeight: 1 }}>{as15.toLocaleString()}</div>
       <div style={{ fontSize: "13px", fontWeight: "bold", color: asok ? pctColor(as15, len) : C.error, marginTop: "3px" }}>{Math.round(as15/len*100)}% of runway</div>
       </div>}
@@ -7140,8 +7224,8 @@ null}
       const markerColor50 = C.warm;
       return (
       <Card>
-      <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: "1px solid " + C.border }}>
-      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.green, marginBottom: "4px" }}>TAKEOFF PERFORMANCE</div>
+      <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: C.cardBorder + " solid " + C.border }}>
+      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "700" : "normal", marginBottom: "4px" }}>TAKEOFF PERFORMANCE</div>
       <div style={{ fontSize: "13px", color: C.dimmer, letterSpacing: "1px" }}>WING FLAPS 0 · COWL FLAPS OPEN · SHORT FIELD · FIG 5-13 / 5-15</div>
       </div>
       <MetarFetch onFill={function(d) {
@@ -7157,13 +7241,13 @@ null}
       <AltOATRow altLabel="PRESSURE ALTITUDE" altValue={alt} onAltChange={setAlt} altHint="0 - 8,000 ft" altPlaceholder="e.g. 1250" altFilled={metarFilled.includes("alt")} oatValue={oat} onOatChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} oatFilled={metarFilled.includes("oat")} />
       <InputField label="GROSS WEIGHT" unit="LBS" value={weight} onChange={setWeight} placeholder="e.g. 3400" hint="2,600 - 3,800 lbs (leave blank for 3,800)" />
       <div>
-      <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.green, marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+      <div style={{ fontSize: "12px", letterSpacing: "3px", color: C.isLight ? C.dim : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
       WIND
       {metarFilled.includes("wind") && <span style={{ fontSize: "11px", background: C.green, color: C.btnText, borderRadius: "3px", padding: "2px 6px", letterSpacing: "1px", fontWeight: "bold" }}>METAR</span>}
       </div>
       <Grid3 style={{ marginBottom: "8px" }}>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>RUNWAY</div>
       {airportRunways.length > 0 ? (
       <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
       {(function() {
@@ -7197,18 +7281,18 @@ null}
       </div>
       ) : (
       <input type="number" value={runway} onChange={function(e) { setRunway(e.target.value.slice(0,2)); setRunwayFull(""); }} placeholder="e.g. 28"
-      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       )}
       </div>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>WIND DIR</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>WIND DIR</div>
       <input type="number" value={windHeading} onChange={function(e) { setWindHeading(e.target.value); }} placeholder="e.g. 270"
-      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       </div>
       <div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginBottom: "4px" }}>SPEED KT</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px", marginBottom: "4px" }}>SPEED KT</div>
       <input type="number" value={windSpeed} onChange={function(e) { setWindSpeed(e.target.value); }} placeholder="e.g. 10"
-      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
+      style={{ width: "100%", boxSizing: "border-box", background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }} />
       </div>
       </Grid3>
       {windComponents && (function() {
@@ -7239,14 +7323,14 @@ null}
       <div style={{ fontSize: "12px", color: C.note, letterSpacing: "1px" }}>Wind clamped to {result.windClamped} kt (chart max {result.windDir === "head" ? "30" : "10"} kt)</div>
       </div>
       )}
-      <div style={{ background: C.input, border: "1px solid " + C.borderDim, borderRadius: "3px", padding: "12px 16px", display: "flex", justifyContent: "space-around", alignItems: "center", marginBottom: "12px" }}>
+      <div style={{ background: C.input, border: C.cardBorder + " solid " + C.borderDim, borderRadius: "3px", padding: "12px 16px", display: "flex", justifyContent: "space-around", alignItems: "center", marginBottom: "12px" }}>
       <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>ROTATE (Vr)</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "4px" }}>ROTATE (Vr)</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: markerColorRoll }}>{result.vr}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>KIAS</span></div>
       </div>
       <div style={{ width: "1px", height: "40px", background: C.borderDim }} />
       <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "4px" }}>OBSTACLE</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "4px" }}>OBSTACLE</div>
       <div style={{ fontSize: "28px", fontWeight: "bold", color: markerColor50 }}>{result.vobs}<span style={{ fontSize: "13px", color: C.dim, marginLeft: "4px" }}>KIAS</span></div>
       </div>
       </div>
@@ -7260,7 +7344,7 @@ null}
       var C = props.C, res = props.res, label = props.label, fig = props.fig, speed = props.speed, color = props.color, oeiWarning = props.oeiWarning, altClamped = props.altClamped;
       return React.createElement("div", { style: { background: C.input, border: "1px solid " + color, borderRadius: "3px", padding: "14px 12px", textAlign: "center" } },
       React.createElement("div", { style: { fontSize: "12px", letterSpacing: "1px", color: C.text, marginBottom: "3px", fontWeight: "bold" } }, label),
-      React.createElement("div", { style: { fontSize: "10px", letterSpacing: "1px", color: C.dim, marginBottom: "8px" } }, speed + " / " + fig + (altClamped ? " (clamped 10k)" : "")),
+      React.createElement("div", { style: { fontSize: "10px", letterSpacing: "1px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", marginBottom: "8px" } }, speed + " / " + fig + (altClamped ? " (clamped 10k)" : "")),
       res.atCeiling
       ? React.createElement("div", { style: { fontSize: "13px", color: C.error, fontWeight: "bold", letterSpacing: "2px" } }, "AT CEILING")
       : React.createElement("div", null,
@@ -7298,8 +7382,8 @@ null}
       }, [alt, oat, tempUnit, weight]);
       return (
       <Card>
-      <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: "1px solid " + C.border }}>
-      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.green, marginBottom: "4px" }}>CLIMB PERFORMANCE</div>
+      <div style={{ marginBottom: "20px", paddingBottom: "16px", borderBottom: C.cardBorder + " solid " + C.border }}>
+      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "700" : "normal", marginBottom: "4px" }}>CLIMB PERFORMANCE</div>
       <div style={{ fontSize: "13px", color: C.dimmer, letterSpacing: "1px" }}>FLAPS 0 - 2700 RPM - FULL THROTTLE - FULL RICH</div>
       </div>
       <MetarFetch onFill={function(d) {
@@ -7358,24 +7442,24 @@ null}
       const bankColor = bank <= 30 ? C.green : bank <= 45 ? C.warm : C.error;
       return (
       <Card>
-      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.green, marginBottom: "24px" }}>SPEEDS REFERENCE</div>
+      <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "700" : "normal", marginBottom: "24px" }}>SPEEDS REFERENCE</div>
       {/* Weight input */}
       <div style={{ marginBottom: "20px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>GROSS WEIGHT</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>GROSS WEIGHT</div>
       <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
       <input
       type="number"
       value={weight}
       onChange={function(e) { setWeight(e.target.value); }}
       placeholder="e.g. 3400"
-      style={{ flex: 1, boxSizing: "border-box", background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }}
+      style={{ flex: 1, boxSizing: "border-box", background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "11px 14px", color: C.text, fontFamily: mono, fontSize: "18px" }}
       />
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim }}>LBS</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal" }}>LBS</div>
       </div>
       {weight !== "" && !validWeight && <div style={{ fontSize: "11px", color: C.error, marginTop: "4px", letterSpacing: "1px" }}>Weight must be 2,500 - 3,800 lbs</div>}
       </div>
       {/* Maneuvering speed */}
-      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.green, marginBottom: "12px", borderBottom: "1px solid " + C.border, paddingBottom: "8px" }}>MANEUVERING SPEED (Vo)</div>
+      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "12px", borderBottom: C.cardBorder + " solid " + C.border, paddingBottom: "8px" }}>MANEUVERING SPEED (Vo)</div>
       {vo !== null ? (
       <div style={{ background: C.input, border: "2px solid " + C.cool, borderRadius: "4px", padding: "20px", textAlign: "center", marginBottom: "20px" }}>
       <div style={{ fontSize: "11px", letterSpacing: "3px", color: C.cool, marginBottom: "6px" }}>Vo AT {Math.round(weightVal).toLocaleString()} LB</div>
@@ -7384,16 +7468,16 @@ null}
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "8px" }}>Do not make full or abrupt control inputs above this speed</div>
       </div>
       ) : (
-      <div style={{ background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "16px", textAlign: "center", color: C.dim, fontSize: "12px", letterSpacing: "1px", marginBottom: "20px" }}>
+      <div style={{ background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "16px", textAlign: "center", color: C.dim, fontSize: "12px", letterSpacing: "1px", marginBottom: "20px" }}>
       Enter gross weight (2,870 - 3,800 lb) to calculate
       </div>
       )}
       {/* Stall speed */}
-      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.green, marginBottom: "12px", borderBottom: "1px solid " + C.border, paddingBottom: "8px" }}>STALL SPEED (Vs) - FIG 5-5</div>
-      <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "1px", marginBottom: "14px" }}>Power off - KIAS</div>
+      <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "12px", borderBottom: C.cardBorder + " solid " + C.border, paddingBottom: "8px" }}>STALL SPEED (Vs) - FIG 5-5</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dimmer : C.dim, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "1px", marginBottom: "14px" }}>Power off - KIAS</div>
       {/* Flap toggle */}
       <div style={{ marginBottom: "14px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>FLAP SETTING</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>FLAP SETTING</div>
       <div style={{ display: "flex", gap: "8px" }}>
       {[{ val: "up", label: "FLAPS UP" }, { val: "40", label: "FLAPS 40" }].map(function(opt) {
       return React.createElement("button", {
@@ -7411,7 +7495,7 @@ null}
       </div>
       {/* Bank angle slider */}
       <div style={{ marginBottom: "16px" }}>
-      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.dim, marginBottom: "6px" }}>ANGLE OF BANK</div>
+      <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>ANGLE OF BANK</div>
       <input
       type="range"
       min="0" max="60" step="1"
@@ -7447,7 +7531,7 @@ null}
       )}
       </div>
       ) : (
-      <div style={{ background: C.input, border: "1px solid " + C.border, borderRadius: "3px", padding: "16px", textAlign: "center", color: C.dim, fontSize: "12px", letterSpacing: "1px", marginBottom: "12px" }}>
+      <div style={{ background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "16px", textAlign: "center", color: C.dim, fontSize: "12px", letterSpacing: "1px", marginBottom: "12px" }}>
       Enter gross weight (2,500 - 3,800 lb) to calculate
       </div>
       )}
@@ -7468,8 +7552,8 @@ null}
       <div style={{ minHeight: "100vh", background: C.bg, fontFamily: mono, color: C.text, display: "flex", flexDirection: "column", alignItems: "center", padding: mobile ? "16px 12px" : "32px 24px" }}>
       {onBack && (
       <div style={{ width: "100%", maxWidth: "860px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <button onClick={onBack} style={{ background: "none", border: "1px solid " + C.borderDim, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>AIRCRAFT</button>
-      <button onClick={toggleTheme} style={{ background: "none", border: "1px solid " + C.borderDim, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
+      <button onClick={onBack} style={{ background: "none", border: C.cardBorder + " solid " + C.borderDim, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>AIRCRAFT</button>
+      <button onClick={toggleTheme} style={{ background: "none", border: C.cardBorder + " solid " + C.borderDim, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
       {theme === "dark" ? "LIGHT" : "DARK"}
       </button>
       </div>
@@ -7479,12 +7563,12 @@ null}
       <div style={{ fontSize: mobile ? "22px" : "36px", fontWeight: "bold", letterSpacing: mobile ? "1px" : "3px" }}>PERFORMANCE CALCULATOR</div>
       <div style={{ fontSize: "11px", color: C.warm, marginTop: "8px", letterSpacing: "2px" }}>EARLY ACCESS - MORE TABS COMING SOON</div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(" + tabs.length + ", 1fr)", marginBottom: mobile ? "14px" : "24px", border: "1px solid " + C.border, borderRadius: "4px", overflow: "hidden", width: "100%", maxWidth: "860px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(" + tabs.length + ", 1fr)", marginBottom: mobile ? "14px" : "24px", border: C.cardBorder + " solid " + C.border, borderRadius: "4px", overflow: "hidden", width: "100%", maxWidth: "860px" }}>
       {tabs.map(function(tab, i) {
       return (
       <button key={tab.id} onClick={function() { setActiveTab(tab.id); }} style={{
       padding: mobile ? "10px 4px" : "14px 8px", background: activeTab === tab.id ? C.green : C.card,
-      border: "none", borderLeft: i > 0 ? "1px solid " + C.border : "none",
+      border: "none", borderLeft: i > 0 ? C.cardBorder + " solid " + C.border : "none",
       color: activeTab === tab.id ? C.btnText : C.dim,
       fontFamily: mono, fontSize: mobile ? "10px" : "15px", letterSpacing: mobile ? "0px" : "2px",
       cursor: "pointer", textTransform: "uppercase",
@@ -7541,7 +7625,7 @@ null}
       <MobileContext.Provider value={mobile}>
       <div style={{ minHeight: "100vh", background: C.bg, fontFamily: mono, color: C.text, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: mobile ? "24px 16px" : "48px 24px" }}>
       <div style={{ position: "absolute", top: "16px", right: "16px" }}>
-      <button onClick={toggleTheme} style={{ background: "none", border: `1px solid ${C.borderDim}`, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
+      <button onClick={toggleTheme} style={{ background: "none", border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
       {theme === "dark" ? "☀ LIGHT" : "☾ DARK"}
       </button>
       </div>
@@ -7550,7 +7634,7 @@ null}
       <div style={{ fontSize: mobile ? "28px" : "42px", fontWeight: "bold", letterSpacing: "2px" }}>AERO</div>
       <div style={{ fontSize: mobile ? "28px" : "42px", fontWeight: "bold", letterSpacing: "2px", color: C.green }}>CALC</div>
       <div style={{ fontSize: mobile ? "12px" : "14px", color: C.dim, marginTop: "12px", letterSpacing: "2px" }}>SELECT AIRCRAFT</div>
-      <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "8px", letterSpacing: "2px" }}>v1.5.0</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", marginTop: "8px", letterSpacing: "2px" }}>v1.5.0</div>
       </div>
       <div style={{ display: "flex", flexDirection: mobile ? "column" : "row", flexWrap: "wrap", gap: "16px", width: "100%", maxWidth: "760px" }}>
       {aircraft.map(ac => (
@@ -7577,22 +7661,22 @@ null}
       : <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.warm, background: C.warm + "15", border: `1px solid ${C.warm}55`, padding: "3px 8px", borderRadius: "2px" }}>COMING SOON</div>
       }
       </div>
-      <div style={{ fontSize: "11px", color: C.dimmest, letterSpacing: "1px", marginBottom: "16px" }}>{ac.desc}</div>
+      <div style={{ fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "1px", marginBottom: "16px" }}>{ac.desc}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
       {ac.tags.map(tag => (
-      <div key={tag} style={{ fontSize: "10px", letterSpacing: "1px", color: ac.available ? C.dim : C.dimmest, background: C.input, border: `1px solid ${C.borderDim}`, padding: "2px 7px", borderRadius: "2px" }}>{tag}</div>
+      <div key={tag} style={{ fontSize: "10px", letterSpacing: "1px", color: ac.available ? C.dim : C.dimmest, background: C.input, border: `${C.cardBorder} solid ${C.borderDim}`, padding: "2px 7px", borderRadius: "2px" }}>{tag}</div>
       ))}
       </div>
       {ac.available && (
-      <div style={{ marginTop: "20px", fontSize: "12px", letterSpacing: "3px", color: C.green, display: "flex", alignItems: "center", gap: "6px" }}>
+      <div style={{ marginTop: "20px", fontSize: "12px", letterSpacing: "3px", color: C.isLight ? C.dim : C.green, fontWeight: C.isLight ? "600" : "normal", display: "flex", alignItems: "center", gap: "6px" }}>
       OPEN CALCULATOR <span style={{ fontSize: "16px" }}>→</span>
       </div>
       )}
       </button>
       ))}
       </div>
-      <div style={{ marginTop: "40px", fontSize: "11px", color: C.dimmest, letterSpacing: "2px" }}>AEROCALC v1.5.0 · POH PERFORMANCE CALCULATOR</div>
-      <div style={{ marginTop: "8px", fontSize: "10px", color: C.dimmest, letterSpacing: "1px" }}>(Calc is short for calculator)</div>
+      <div style={{ marginTop: "40px", fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px" }}>AEROCALC v1.5.0 · POH PERFORMANCE CALCULATOR</div>
+      <div style={{ marginTop: "8px", fontSize: "10px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "1px" }}>(Calc is short for calculator)</div>
       </div>
       </MobileContext.Provider>
       );
@@ -7604,6 +7688,7 @@ null}
       React.useEffect(() => {
       document.body.style.background = THEMES[theme].bg;
       document.body.style.color = THEMES[theme].text;
+      document.body.classList.toggle("light-mode", theme === "light");
       }, [theme]);
       if (!aircraft) return <ThemeContext.Provider value={theme}><AircraftMenu onSelect={setAircraft} theme={theme} toggleTheme={toggleTheme} /></ThemeContext.Provider>;
       if (aircraft === "c172s") return <ThemeContext.Provider value={theme}><C172App onBack={() => setAircraft(null)} theme={theme} toggleTheme={toggleTheme} /></ThemeContext.Provider>;
