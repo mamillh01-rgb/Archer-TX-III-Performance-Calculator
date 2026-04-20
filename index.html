@@ -8208,7 +8208,7 @@ null}
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: "14px", color: C.green, letterSpacing: "2px", marginBottom: "8px" }}>PASSWORD UPDATED</div>
               <div style={{ fontSize: "12px", color: C.dim, marginBottom: "20px" }}>You can now sign in with your new password.</div>
-              <button onClick={() => window.location.hash = ""} style={{ width: "100%", padding: "12px", background: C.green, border: "none", borderRadius: "3px", color: C.btnText, fontFamily: mono, fontSize: "12px", letterSpacing: "2px", cursor: "pointer", fontWeight: "bold" }}>GO TO APP</button>
+              <button onClick={() => { window.location.hash = ""; window.location.reload(); }} style={{ width: "100%", padding: "12px", background: C.green, border: "none", borderRadius: "3px", color: C.btnText, fontFamily: mono, fontSize: "12px", letterSpacing: "2px", cursor: "pointer", fontWeight: "bold" }}>GO TO APP</button>
             </div>
           ) : (
             <>
@@ -8254,9 +8254,19 @@ null}
         document.body.classList.toggle("light-mode", theme === "light");
       }, [theme]);
       React.useEffect(() => {
-        sbClient.auth.getSession().then(({ data }) => {
-          setUser(data.session ? data.session.user : null);
-        });
+        // Handle password reset token in URL hash
+        var hash = window.location.hash;
+        if (hash && hash.includes("type=recovery")) {
+          setIsPasswordReset(true);
+          // Let Supabase process the token from the hash
+          sbClient.auth.getSession().then(({ data }) => {
+            setUser(data.session ? data.session.user : null);
+          });
+        } else {
+          sbClient.auth.getSession().then(({ data }) => {
+            setUser(data.session ? data.session.user : null);
+          });
+        }
         var { data: listener } = sbClient.auth.onAuthStateChange((_event, session) => {
           if (_event === "PASSWORD_RECOVERY") {
             setIsPasswordReset(true);
