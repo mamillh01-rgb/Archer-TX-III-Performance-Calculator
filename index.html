@@ -8243,17 +8243,24 @@ null}
         var next = t === "dark" ? "light" : "dark";
         try { localStorage.setItem("aerocalc-theme", next); } catch(e) {}
         if (user) {
-          sbClient.from("user_preferences").upsert({ user_id: user.id, theme: next, updated_at: new Date().toISOString() });
+          sbClient.from("user_preferences").upsert({ user_id: user.id, theme: next, updated_at: new Date().toISOString() }).then(function({ error }) {
+            if (error) console.error("Theme save error:", error);
+            else console.log("Theme saved to cloud:", next);
+          });
         }
         return next;
       });
       // Load theme from cloud when user logs in
       React.useEffect(() => {
         if (!user) return;
-        sbClient.from("user_preferences").select("theme").eq("user_id", user.id).single().then(function({ data }) {
+        sbClient.from("user_preferences").select("theme").eq("user_id", user.id).single().then(function({ data, error }) {
+          if (error && error.code !== "PGRST116") { console.error("Theme load error:", error); return; }
           if (data && data.theme) {
+            console.log("Loaded theme from cloud:", data.theme);
             setTheme(data.theme);
             try { localStorage.setItem("aerocalc-theme", data.theme); } catch(e) {}
+          } else {
+            console.log("No cloud theme found, using local");
           }
         });
       }, [user ? user.id : null]);
