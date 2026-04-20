@@ -2927,12 +2927,10 @@
           if (error) { console.error("C172 profile sync error:", error); return; }
           if (data && data.length) {
             var cloud = data.map(function(r) { return { tail: r.tail, emptyWt: r.empty_wt, emptyCG: r.empty_cg, emptyMom: r.empty_mom }; });
-            setProfiles(function(current) {
-              var merged = [...current];
-              cloud.forEach(function(p) { if (!merged.find(function(m) { return m.tail === p.tail; })) merged.push(p); });
-              try { localStorage.setItem(C172_STORAGE_KEY, JSON.stringify(merged)); } catch(e) {}
-              return merged;
-            });
+            // Ensure default profile is always present
+            if (!cloud.find(function(p) { return p.tail === C172_DEFAULT_PROFILE.tail; })) cloud.unshift(C172_DEFAULT_PROFILE);
+            setProfiles(cloud);
+            try { localStorage.setItem(C172_STORAGE_KEY, JSON.stringify(cloud)); } catch(e) {}
           }
         });
       }, [user ? user.id : null]);
@@ -3427,12 +3425,10 @@
           if (error) { console.error("Archer profile sync error:", error); return; }
           if (data && data.length) {
             var cloud = data.map(function(r) { return { tail: r.tail, emptyWt: r.empty_wt, emptyCG: r.empty_cg, emptyMom: r.empty_mom }; });
-            setProfiles(function(current) {
-              var merged = [...current];
-              cloud.forEach(function(p) { if (!merged.find(function(m) { return m.tail === p.tail; })) merged.push(p); });
-              try { localStorage.setItem(STORAGE_KEY, JSON.stringify(merged)); } catch(e) {}
-              return merged;
-            });
+            // Ensure default profile is always present
+            if (!cloud.find(function(p) { return p.tail === DEFAULT_PROFILE.tail; })) cloud.unshift(DEFAULT_PROFILE);
+            setProfiles(cloud);
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cloud)); } catch(e) {}
           }
         });
       }, [user ? user.id : null]);
@@ -8246,8 +8242,21 @@ null}
       const toggleTheme = () => setTheme(t => {
         var next = t === "dark" ? "light" : "dark";
         try { localStorage.setItem("aerocalc-theme", next); } catch(e) {}
+        if (user) {
+          sbClient.from("user_preferences").upsert({ user_id: user.id, theme: next, updated_at: new Date().toISOString() });
+        }
         return next;
       });
+      // Load theme from cloud when user logs in
+      React.useEffect(() => {
+        if (!user) return;
+        sbClient.from("user_preferences").select("theme").eq("user_id", user.id).single().then(function({ data }) {
+          if (data && data.theme) {
+            setTheme(data.theme);
+            try { localStorage.setItem("aerocalc-theme", data.theme); } catch(e) {}
+          }
+        });
+      }, [user ? user.id : null]);
       React.useEffect(() => {
         document.body.style.background = THEMES[theme].bg;
         document.body.style.color = THEMES[theme].text;
