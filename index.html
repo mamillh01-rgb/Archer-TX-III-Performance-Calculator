@@ -24,7 +24,7 @@
     }
   </style>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AeroCalc v1.5.0 · POH Performance Calculator</title>
+  <title>AeroCalc v1.8.0 · POH Performance Calculator</title>
   <meta property="og:title" content="AeroCalc" />
   <meta property="og:description" content="POH Performance Calculator — PA-28-181 Archer III & Cessna 172S" />
   <meta property="og:type" content="website" />
@@ -8045,7 +8045,7 @@ null}
       </button>
       </div>
       <div style={{ textAlign: "center", marginBottom: mobile ? "32px" : "56px" }}>
-      <div style={{ fontSize: mobile ? "11px" : "16px", letterSpacing: "6px", color: C.green, marginBottom: "16px" }}>POH PERFORMANCE CALCULATOR · v1.5.0</div>
+      <div style={{ fontSize: mobile ? "11px" : "16px", letterSpacing: "6px", color: C.green, marginBottom: "16px" }}>POH PERFORMANCE CALCULATOR · v1.8.0</div>
       <div style={{ fontSize: mobile ? "28px" : "64px", fontWeight: "bold", letterSpacing: mobile ? "2px" : "6px" }}>AERO</div>
       <div style={{ fontSize: mobile ? "28px" : "64px", fontWeight: "bold", letterSpacing: mobile ? "2px" : "6px", color: C.green }}>CALC</div>
       <div style={{ fontSize: mobile ? "12px" : "16px", color: C.dim, marginTop: "16px", letterSpacing: "4px" }}>SELECT AIRCRAFT</div>
@@ -8089,7 +8089,7 @@ null}
       </button>
       ))}
       </div>
-      <div style={{ marginTop: "40px", fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px" }}>AEROCALC v1.5.0 · POH PERFORMANCE CALCULATOR</div>
+      <div style={{ marginTop: "40px", fontSize: "11px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "2px" }}>AEROCALC v1.8.0 · POH PERFORMANCE CALCULATOR</div>
       <div style={{ marginTop: "8px", fontSize: "10px", color: C.isLight ? C.dim : C.dimmest, fontWeight: C.isLight ? "600" : "normal", letterSpacing: "1px" }}>(Calc is short for calculator)</div>
       </div>
       {showAuth && (
@@ -8178,7 +8178,7 @@ null}
       );
     }
 
-    function ResetPasswordScreen({ theme, toggleTheme }) {
+    function ResetPasswordScreen({ theme, toggleTheme, onDone }) {
       const C = useC();
       const mono = "'Courier New', monospace";
       const [password, setPassword] = useState("");
@@ -8208,7 +8208,7 @@ null}
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: "14px", color: C.green, letterSpacing: "2px", marginBottom: "8px" }}>PASSWORD UPDATED</div>
               <div style={{ fontSize: "12px", color: C.dim, marginBottom: "20px" }}>You can now sign in with your new password.</div>
-              <button onClick={() => { window.location.hash = ""; window.location.reload(); }} style={{ width: "100%", padding: "12px", background: C.green, border: "none", borderRadius: "3px", color: C.btnText, fontFamily: mono, fontSize: "12px", letterSpacing: "2px", cursor: "pointer", fontWeight: "bold" }}>GO TO APP</button>
+              <button onClick={() => { window.location.hash = ""; setDone(false); onDone(); }} style={{ width: "100%", padding: "12px", background: C.green, border: "none", borderRadius: "3px", color: C.btnText, fontFamily: mono, fontSize: "12px", letterSpacing: "2px", cursor: "pointer", fontWeight: "bold" }}>GO TO APP</button>
             </div>
           ) : (
             <>
@@ -8276,7 +8276,7 @@ null}
         return () => listener.subscription.unsubscribe();
       }, []);
       if (user === undefined) return null;
-      if (isPasswordReset) return <ResetPasswordScreen theme={theme} toggleTheme={toggleTheme} />;
+      if (isPasswordReset) return <ResetPasswordScreen theme={theme} toggleTheme={toggleTheme} onDone={() => setIsPasswordReset(false)} />;
       const wrapTheme = (el) => <ThemeContext.Provider value={theme}>{el}</ThemeContext.Provider>;
       if (!aircraft) return wrapTheme(<AircraftMenu onSelect={setAircraft} theme={theme} toggleTheme={toggleTheme} user={user} onSignOut={async () => { await sbClient.auth.signOut(); setUser(null); }} onSignIn={setUser} />);
       if (aircraft === "c172s") return wrapTheme(<C172App onBack={() => setAircraft(null)} theme={theme} toggleTheme={toggleTheme} user={user} />);
