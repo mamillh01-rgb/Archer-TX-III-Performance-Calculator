@@ -32,6 +32,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <script>
     const SUPABASE_URL = "https://udrzcdcywyeletqfwhpc.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_hguS4VI17bZTCsdwRW16zg_G85-J9Ot";
@@ -54,6 +57,12 @@
     .dot1 { animation: dotPulse 1.2s ease-in-out infinite 0s; }
     .dot2 { animation: dotPulse 1.2s ease-in-out infinite 0.4s; }
     .dot3 { animation: dotPulse 1.2s ease-in-out infinite 0.8s; }
+    @media print {
+      body * { visibility: hidden; }
+      #navlog-print, #navlog-print * { visibility: visible; }
+      #navlog-print { position: absolute; left: 0; top: 0; width: 100%; }
+      @page { size: landscape; margin: 12mm; }
+    }
   </style>
   <script>
     // PWA: Register service worker and inject manifest
@@ -61,7 +70,7 @@
       window.addEventListener('load', () => {
         // Inline service worker
         const swCode = `
-          const CACHE = 'archer-perf-v1';
+          const CACHE = 'archer-perf-v2';
           self.addEventListener('install', e => {
             e.waitUntil(caches.open(CACHE).then(c => c.addAll(['/'])));
             self.skipWaiting();
@@ -71,11 +80,21 @@
             self.clients.claim();
           });
           self.addEventListener('fetch', e => {
-            e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).then(res => {
-              const clone = res.clone();
-              caches.open(CACHE).then(c => c.put(e.request, clone));
-              return res;
-            }).catch(() => caches.match('/')))));
+            const url = e.request.url;
+            if (url.includes('metar-proxy') || url.includes('open-meteo') || url.includes('arcgis') || url.includes('openstreetmap') || url.includes('unpkg') || url.includes('leaflet')) {
+              e.respondWith(
+                caches.match(e.request).then(cached => {
+                  if (cached) return cached;
+                  return fetch(e.request, { mode: 'cors', credentials: 'omit' }).then(res => {
+                    if (res && res.status === 200) {
+                      const clone = res.clone();
+                      caches.open(CACHE).then(c => c.put(e.request, clone));
+                    }
+                    return res;
+                  });
+                })
+              );
+            }
           });
         `;
         const blob = new Blob([swCode], {type: 'application/javascript'});
@@ -404,6 +423,65 @@
       if (dev < 0) return `ISA ${dev.toFixed(1)}°C`;
       return "ISA";
     }
+
+    // Returns array of clamp warning objects for ChartClampWarning component
+    // Each: { label, entered, limit, used }
+    function getClampWarnings(inputs) {
+      const warnings = [];
+      if (inputs.alt !== undefined && inputs.altMin !== undefined && inputs.altMax !== undefined) {
+        const entered = inputs.alt;
+        const clamped = Math.max(inputs.altMin, Math.min(inputs.altMax, entered));
+        if (Math.abs(clamped - entered) > 0.5) {
+          const limit = entered < inputs.altMin ? inputs.altMin + " ft" : inputs.altMax + " ft";
+          warnings.push({ label: "Pressure Altitude", entered: Math.round(entered) + " ft", limit, used: Math.round(clamped) + " ft" });
+        }
+      }
+      if (inputs.oat !== undefined && inputs.oatMin !== undefined && inputs.oatMax !== undefined) {
+        const entered = inputs.oat;
+        const clamped = Math.max(inputs.oatMin, Math.min(inputs.oatMax, entered));
+        if (Math.abs(clamped - entered) > 0.1) {
+          const limit = entered < inputs.oatMin ? inputs.oatMin + "°C" : inputs.oatMax + "°C";
+          warnings.push({ label: "OAT", entered: entered.toFixed(1) + "°C", limit, used: clamped.toFixed(1) + "°C" });
+        }
+      }
+      if (inputs.weight !== undefined && inputs.weightMin !== undefined && inputs.weightMax !== undefined) {
+        const entered = inputs.weight;
+        const clamped = Math.max(inputs.weightMin, Math.min(inputs.weightMax, entered));
+        if (Math.abs(clamped - entered) > 0.5) {
+          const limit = entered < inputs.weightMin ? inputs.weightMin + " lbs" : inputs.weightMax + " lbs";
+          warnings.push({ label: "Weight", entered: Math.round(entered) + " lbs", limit, used: Math.round(clamped) + " lbs" });
+        }
+      }
+      return warnings;
+    }
+
+    // Get OAT chart limit at a given altitude by interpolating known chart bounds
+    function getOATLimits(altFt, chartBounds) {
+      // chartBounds: array of [alt, oatMin, oatMax] sorted by alt
+      const clampedAlt = Math.max(chartBounds[0][0], Math.min(chartBounds[chartBounds.length-1][0], altFt));
+      for (let i = 0; i < chartBounds.length - 1; i++) {
+        if (clampedAlt >= chartBounds[i][0] && clampedAlt <= chartBounds[i+1][0]) {
+          const t = (clampedAlt - chartBounds[i][0]) / (chartBounds[i+1][0] - chartBounds[i][0]);
+          return {
+            min: chartBounds[i][1] + t * (chartBounds[i+1][1] - chartBounds[i][1]),
+            max: chartBounds[i][2] + t * (chartBounds[i+1][2] - chartBounds[i][2]),
+          };
+        }
+      }
+      const last = chartBounds[chartBounds.length-1];
+      return { min: last[1], max: last[2] };
+    }
+
+    // Chart OAT bounds per altitude for each tab [alt, oatMin, oatMax]
+    const CHART_BOUNDS = {
+      takeoff:  [[0,0,50],[2000,-4,46],[4000,-7.6,42],[6000,-2,38],[8000,-16,34]],
+      landing:  [[0,0,50],[2000,-4,46],[4000,-8,42],[6000,-11,38],[7000,-15,34]],
+      tfd:      [[0,-25,50],[2000,-25,50],[4000,-25,50],[6000,-25,50],[8000,-25,40],[10000,-25,30],[12000,-25,20]],
+      roc:      [[0,-25,50],[4000,-25,45],[8000,-25,35],[12000,-25,22],[13000,-25,20]],
+      cruise65: [[0,-15,30],[2000,-15,30],[4000,-15,30],[6000,-15,30],[8000,-15,17.5],[10000,-15,0]],
+      cruise75: [[0,-15,30],[2000,-15,30],[4000,-15,30],[6000,-15,15],[7000,-15,7.5]],
+      cruise55: [[0,-15,30],[2000,-15,30],[4000,-15,30],[6000,-15,30],[8000,-15,17.5],[10000,-15,0]],
+    };
     const MobileContext = React.createContext(false);
     const useIsMobileInner = () => React.useContext(MobileContext);
     const ThemeContext = React.createContext("dark");
@@ -551,6 +629,24 @@
       </div>
       );
     }
+
+    // Shows a warning when inputs were clamped to chart limits
+    function ChartClampWarning({ items }) {
+      const C = useC();
+      if (!items || items.length === 0) return null;
+      return (
+        <div style={{ background: C.isLight ? "#fff7ed" : "rgba(251,146,60,0.08)", border: `${C.cardBorder} solid ${C.isLight ? "#fb923c" : "rgba(251,146,60,0.4)"}`, borderRadius: "4px", padding: "10px 14px", marginBottom: "14px" }}>
+          <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#fb923c", fontWeight: "bold", marginBottom: "6px" }}>⚠ INPUT OUTSIDE CHART RANGE — RESULTS EXTRAPOLATED</div>
+          {items.map(function(item, i) {
+            return (
+              <div key={i} style={{ fontSize: "12px", color: C.isLight ? "#92400e" : "#fdba74", letterSpacing: "0.5px", marginTop: i > 0 ? "3px" : "0" }}>
+                {item.label}: entered <strong>{item.entered}</strong>, chart limit <strong>{item.limit}</strong> — using <strong>{item.used}</strong>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
     function ResultCard({ label, value, unit, color }) {
       const C = useC();
       const c = color || C.green;
@@ -615,12 +711,15 @@
       if (dep >= cruise) { setError("Cruise altitude must be above departure altitude."); return; }
       if (dep < 0 || cruise > 12000) { setError("Altitudes must be between 0 and 12,000 ft."); return; }
       if (oatDepC < -25 || oatDepC > 50 || oatCruiseC < -25 || oatCruiseC > 50) { setError("OAT out of chart range (approx −25°C to 50°C)."); return; }
+      const tfdDepOATLimits = getOATLimits(dep, CHART_BOUNDS.tfd);
+      const tfdCruOATLimits = getOATLimits(cruise, CHART_BOUNDS.tfd);
+      const tfdClampWarnings = getClampWarnings({ alt: cruise, altMin: 0, altMax: 12000, oat: oatCruiseC, oatMin: tfdCruOATLimits.min, oatMax: tfdCruOATLimits.max });
       const climb = calculateTimeFuelDist(dep, cruise, oatDepC, oatCruiseC);
       let descent = null;
       if (showDescent && !isNaN(oatDestC) && !isNaN(dest) && dest < cruise) {
       descent = calculateDescent(cruise, dest, oatCruiseC, oatDestC);
       }
-      setResult({ ...climb, descent });
+      setResult({ ...climb, descent, clampWarnings: tfdClampWarnings });
       }, [departAlt, cruiseAlt, destAlt, oatDep, oatCruise, oatDest, tempUnit, showDescent]);
       return (
       <Card>
@@ -654,6 +753,7 @@
       <CalcButton onClick={handleCalculate} />
       {result && (
       <div style={{ marginTop: "28px" }}>
+      <ChartClampWarning items={result.clampWarnings} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
       <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal" }}>RESULTS</div>
       <div style={{ display: "flex", gap: "6px" }}>
@@ -734,9 +834,12 @@
       let oatC = parseFloat(oat);
       if (isNaN(altVal) || isNaN(oatC)) { setError("Please fill in all fields."); return; }
       if (tempUnit === "F") oatC = (oatC - 32) * 5 / 9;
-      if (altVal < 0 || altVal > 14000) { setError("Altitude must be between 0 and 14,000 ft."); return; }
+      if (altVal < 0 || altVal > 13000) { setError("Altitude must be between 0 and 13,000 ft."); return; }
       if (oatC < -25 || oatC > 50) { setError("OAT out of chart range (approx −25°C to 50°C)."); return; }
-      setResult(calculateROC(altVal, oatC));
+      const rocOATLimits = getOATLimits(altVal, CHART_BOUNDS.roc);
+      const rocClampWarnings = getClampWarnings({ alt: altVal, altMin: 0, altMax: 13000, oat: oatC, oatMin: rocOATLimits.min, oatMax: rocOATLimits.max });
+      const rocRes = calculateROC(altVal, oatC);
+      setResult({ ...rocRes, clampWarnings: rocClampWarnings });
       }, [alt, oat, tempUnit]);
       const rocColor = result ? (result.roc > 500 ? C.green : result.roc > 300 ? "#8ab87a" : result.roc > 150 ? C.warm : "#cc5555") : C.text;
       const rocLabel = result ? (result.roc > 500 ? "EXCELLENT" : result.roc > 300 ? "GOOD" : result.roc > 150 ? "MARGINAL" : result.roc > 0 ? "POOR — NEAR CEILING" : "AT / ABOVE CEILING") : "";
@@ -748,12 +851,13 @@
       return (
       <Card>
       <div style={{ display: "flex", flexDirection: "column", gap: "20px", marginBottom: "28px" }}>
-      <AltOATRow altLabel="PRESS. ALT." altValue={alt} onAltChange={setAlt} altHint="0 – 14,000 ft" altPlaceholder="e.g. 4000" oatValue={oat} onOatChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} />
+      <AltOATRow altLabel="PRESS. ALT." altValue={alt} onAltChange={setAlt} altHint="0 – 13,000 ft" altPlaceholder="e.g. 4000" oatValue={oat} onOatChange={setOat} unit={tempUnit} onUnitChange={setTempUnit} />
       </div>
       {error && <ErrorBox msg={error} />}
       <CalcButton onClick={handleCalculate} />
       {result && (
       <div style={{ marginTop: "28px" }}>
+      <ChartClampWarning items={result.clampWarnings} />
       <ISABadgeRow label="RESULTS" isaLabel={formatISA(result.isaDeviation)} isaDeviation={result.isaDeviation} isaTemp={result.isaTemp} />
       <div style={{ background: C.input, border: `${C.cardBorder} solid ${C.border}`, borderRadius: "3px", padding: "28px", textAlign: "center", marginBottom: "12px" }}>
       <div style={{ fontSize: "18px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "12px" }}>RATE OF CLIMB</div>
@@ -841,7 +945,11 @@
       if (tempUnit === "F") oatC = (oatC - 32) * 5 / 9;
       const cfg = cruiseConfigs[power];
       if (altVal < 0 || altVal > cfg.maxAlt) { setError(`Altitude must be 0 – ${cfg.maxAlt.toLocaleString()} ft for ${cfg.label}.`); return; }
-      setResult(calculateCruise(altVal, oatC, wheelPants, power));
+      const cruBoundsKey = power === "75" ? "cruise75" : power === "55" ? "cruise55" : "cruise65";
+      const cruOATLimits = getOATLimits(altVal, CHART_BOUNDS[cruBoundsKey]);
+      const cruClampWarnings = getClampWarnings({ alt: altVal, altMin: 0, altMax: cfg.maxAlt, oat: oatC, oatMin: cruOATLimits.min, oatMax: cruOATLimits.max });
+      const cruResult = calculateCruise(altVal, oatC, wheelPants, power);
+      setResult({ ...cruResult, clampWarnings: cruClampWarnings });
       }, [alt, oat, tempUnit, wheelPants, power]);
       useEffect(() => { if (result) runCalc(power, wheelPants); }, [power, wheelPants]);
       const cfg = cruiseConfigs[power];
@@ -860,6 +968,7 @@
       <CalcButton onClick={handleCalculate} />
       {result && (
       <div style={{ marginTop: "28px" }}>
+      <ChartClampWarning items={result.clampWarnings} />
       <ISABadgeRow label={`${cfg.label} RESULTS`} isaLabel={formatISA(result.isaDeviation)} isaDeviation={result.isaDeviation} isaTemp={result.isaTemp} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "12px" }}>
       <ResultCard label="RPM" value={result.rpm} unit="RPM" />
@@ -1432,13 +1541,15 @@
       const MAX_HEAD = 15, MAX_TAIL = 5;
       const windClamped = wDir === "head" ? Math.min(windActual, MAX_HEAD) : Math.min(windActual, MAX_TAIL);
       const windWasClamped = windActual > windClamped;
+      const toOATLimits = getOATLimits(altCalc, CHART_BOUNDS.takeoff);
+      const clampWarnings = getClampWarnings({ alt: altVal, altMin: 0, altMax: 8000, oat: oatC, oatMin: toOATLimits.min, oatMax: toOATLimits.max });
       let res;
       if (flaps === "up") {
       res = calculateTakeoffFlapsUp(altCalc, oatC, weightVal, windClamped, wDir);
       } else {
       res = calculateTakeoff(altCalc, oatC, weightVal, windClamped, wDir, "50ft");
       }
-      setResult({ ...res, flaps, windComponents: wc, windSpd, windActual, windClamped, windWasClamped, windDir: wDir, rwyNum, weightLbs: weightVal, densityAlt: getDensityAlt(altVal, oatC), altWasClamped, altVal });
+      setResult({ ...res, flaps, windComponents: wc, windSpd, windActual, windClamped, windWasClamped, windDir: wDir, rwyNum, weightLbs: weightVal, densityAlt: getDensityAlt(altVal, oatC), altWasClamped, altVal, clampWarnings });
       }, [alt, oat, tempUnit, weight, runway, windHeading, windSpeed, flaps, windComponents, windSpd, rwyNum, windHdg]);
       return (
       <Card>
@@ -1695,6 +1806,7 @@
       }
       return (
       <div style={{ marginTop: "28px" }}>
+      <ChartClampWarning items={result.clampWarnings} />
       <ISABadgeRow label="RESULTS" isaLabel={formatISA(result.isaDeviation)} isaDeviation={result.isaDeviation} isaTemp={result.isaTemp} />
       {result.windWasClamped && (
       <div style={{ background: C.errorBg, border: `1px solid ${C.warm}`, borderRadius: "3px", padding: "10px 14px", marginBottom: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
@@ -2188,6 +2300,8 @@
       const MAX_HEAD = 15, MAX_TAIL = 5;
       const windClamped = windDir === "head" ? Math.min(windActual, MAX_HEAD) : Math.min(windActual, MAX_TAIL);
       const windWasClamped = windActual > windClamped;
+      const landOATLimits = getOATLimits(altCalc, CHART_BOUNDS.landing);
+      const landClampWarnings = getClampWarnings({ alt: altVal, altMin: 0, altMax: 7000, oat: oatC, oatMin: landOATLimits.min, oatMax: landOATLimits.max });
       setResult({
       ...calculateLanding(altCalc, oatC, weightCalc, windClamped, windDir),
       groundRollFt: calculateLandingGR(altCalc, oatC, weightCalc, windClamped, windDir),
@@ -2202,6 +2316,7 @@
       altVal,
       weightWasClamped,
       weightVal,
+      clampWarnings: landClampWarnings,
       });
       }, [alt, oat, tempUnit, weight, runway, windHeading, windSpeed, windComponents, windSpd, rwyNum, windHdg]);
       return (
@@ -2399,6 +2514,7 @@
       }
       return (
       <div style={{ marginTop: "28px" }}>
+      <ChartClampWarning items={result.clampWarnings} />
       <ISABadgeRow label="RESULTS" isaLabel={formatISA(result.isaDeviation)} isaDeviation={result.isaDeviation} isaTemp={result.isaTemp} />
       {result.windWasClamped && (
       <div style={{ background: C.errorBg, border: `1px solid ${C.warm}`, borderRadius: "3px", padding: "10px 14px", marginBottom: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
@@ -3867,10 +3983,1877 @@
       </Card>
       );
     }
+    function NavlogTab({ savedState, onStateChange, user, onShowAuth, isStandalone }) {
+      savedState = savedState || {};
+      const C = useC();
+      const mobile = useIsMobileInner();
+      const mono = "'Courier New', monospace";
+
+      // C172 descent approximation (no POH chart exists)
+      function calculateC172Descent(cruiseAltFt, destAltFt) {
+        var deltaFt = Math.max(0, cruiseAltFt - destAltFt);
+        var distNM  = deltaFt / 1000 * 3.0;
+        var timeMin = deltaFt / 500;
+        var fuelGal = (timeMin / 60) * 6.5;
+        return { timeMin, fuelGal, distNM };
+      }
+
+      // Unified helpers — these close over acType which is declared after state below
+      function acClimb(depFt, cruiseFt, oatDep, oatCruise) {
+        if (acType === "c172") return calculateC172Climb(depFt, cruiseFt, oatDep, oatCruise);
+        return calculateTimeFuelDist(depFt, cruiseFt, oatDep, oatCruise);
+      }
+      function acDescent(cruiseFt, destFt, oatCruise, oatDest) {
+        if (acType === "c172") return calculateC172Descent(cruiseFt, destFt);
+        return calculateDescent(cruiseFt, destFt, oatCruise, oatDest);
+      }
+      function acCruiseTAS(altFt, oatC, power) {
+        if (acType === "c172") {
+          var rpm = parseInt(power);
+          try { var r = calculateC172Cruise(altFt, rpm, oatC); return r ? r.ktas : null; } catch(e) { return null; }
+        }
+        try { var r = calculateCruise(altFt, oatC, false, power); return r ? r.tas : null; } catch(e) { return null; }
+      }
+      function acCruiseGPH(altFt, oatC, power) {
+        if (acType === "c172") {
+          var rpm = parseInt(power);
+          try { var r = calculateC172Cruise(altFt, rpm, oatC); return r ? r.gph : 8.5; } catch(e) { return 8.5; }
+        }
+        return cruiseConfigs[power] ? cruiseConfigs[power].gph : 9.5;
+      }
+      function acMaxCruiseAlt(power) {
+        if (acType === "c172") return 12000;
+        return cruiseConfigs[power] ? cruiseConfigs[power].maxAlt : 10000;
+      }
+
+      // C172 RPM options
+      var C172_RPMS = ["2300", "2400", "2500", "2650"];
+      const mapRef = React.useRef(null);
+      const leafletMap = React.useRef(null);
+      const routeLayerRef = React.useRef(null);
+      const markersRef = React.useRef([]);
+      const tocTodMarkersRef = React.useRef([]);
+      const hasFitRef = React.useRef(false);
+      const tocTodRef = React.useRef(null);
+      React.useEffect(() => { tocTodRef.current = tocTod; }, [tocTod]);
+      const [routeInput, setRouteInput] = React.useState(savedState.routeInput || "");
+      const [waypoints, setWaypoints] = React.useState(savedState.waypoints || []);
+      const [loading, setLoading] = React.useState(false);
+      const [error, setError] = React.useState("");
+      const [legAlts, setLegAlts] = React.useState(savedState.legAlts || {});
+      const [legRemarks, setLegRemarks] = React.useState(savedState.legRemarks || {});
+      const [legTemps, setLegTemps] = React.useState(savedState.legTemps || {});
+      const [cruiseLevelDepTemp, setCruiseLevelDepTemp] = React.useState(savedState.cruiseLevelDepTemp || null);
+      const [cruiseLevelDestTemp, setCruiseLevelDestTemp] = React.useState(savedState.cruiseLevelDestTemp || null);
+      const [legWindDirs, setLegWindDirs] = React.useState(savedState.legWindDirs || {});
+      const [legWindSpds, setLegWindSpds] = React.useState(savedState.legWindSpds || {});
+      const [legVars, setLegVars] = React.useState(savedState.legVars || {});
+      const [wpNames, setWpNames] = React.useState(savedState.wpNames || {});
+      const [weatherLoading, setWeatherLoading] = React.useState(false);
+      const [weatherError, setWeatherError] = React.useState("");
+
+      // Persist state when it changes
+      React.useEffect(() => {
+        if (onStateChange) onStateChange({ routeInput, waypoints, legAlts, legRemarks, legTemps, legWindDirs, legWindSpds, legVars, wpNames, cruiseAlt, cruisePower, depTime, cruiseLevelDepTemp, cruiseLevelDestTemp, navlogAircraft });
+      }, [routeInput, waypoints, legAlts, legRemarks, legTemps, legWindDirs, legWindSpds, legVars, wpNames, cruiseAlt, cruisePower, depTime, cruiseLevelDepTemp, cruiseLevelDestTemp, navlogAircraft]);
+
+      // Default departure time = now rounded to next hour
+      const defaultDep = () => {
+        var d = new Date(); d.setMinutes(0, 0, 0);
+        d.setHours(d.getHours() + 1);
+        return d.toISOString().slice(0,16);
+      };
+      const [depTime, setDepTime] = React.useState(savedState.depTime || defaultDep());
+      const [cruiseAlt, setCruiseAlt] = React.useState(savedState.cruiseAlt || "");
+      const [navlogAircraft, setNavlogAircraftRaw] = React.useState(savedState.navlogAircraft || "archer");
+      var acType = navlogAircraft;
+      var CLIMB_KIAS   = acType === "c172" ? 85 : 87;
+      var DESCENT_KIAS = acType === "c172" ? 90 : 122;
+      const [acDropdownOpen, setAcDropdownOpen] = React.useState(false);
+      const setNavlogAircraft = (ac) => {
+        setNavlogAircraftRaw(ac);
+        // Reset power when switching aircraft
+        if (ac === "c172" && !["2300","2400","2500","2650"].includes(cruisePower)) setCruisePower("2500");
+        if (ac === "archer" && !["55","65","75"].includes(cruisePower)) setCruisePower("65");
+      };
+      const [cruisePower, setCruisePower] = React.useState(savedState.cruisePower || "65");
+      // Reset power setting when aircraft type changes
+      React.useEffect(() => {
+        if (acType === "c172" && !["2300","2400","2500","2650"].includes(cruisePower)) setCruisePower("2500");
+        if (acType === "archer" && !["55","65","75"].includes(cruisePower)) setCruisePower("65");
+      }, [acType]);
+      const [showAltAdvisor, setShowAltAdvisor] = React.useState(false);
+      const [altAdvisorData, setAltAdvisorData] = React.useState(null);
+      const [altAdvisorLoading, setAltAdvisorLoading] = React.useState(false);
+      const [showRouteManager, setShowRouteManager] = React.useState(false);
+      const [savedRoutes, setSavedRoutes] = React.useState([]);
+      const [routesLoading, setRoutesLoading] = React.useState(false);
+      const [saveRouteName, setSaveRouteName] = React.useState("");
+      const [saveStatus, setSaveStatus] = React.useState(null); // "saving" | "saved" | "error"
+      const [showNavlogAuth, setShowNavlogAuth] = React.useState(false);
+      const [tocTod, setTocTod] = React.useState(null);
+      const [tocTodWx, setTocTodWx] = React.useState({ tocWx: null, todWx: null, tocVar: null, todVar: null });
+
+      // Walk distance along route segments, return {lat,lon} at given NM from start or end
+      const interpAlongRoute = (wps, targetNM, fromEnd) => {
+        var pts = fromEnd ? wps.slice().reverse() : wps;
+        var walked = 0;
+        for (var i = 0; i < pts.length - 1; i++) {
+          var segDist = calcDist(pts[i], pts[i+1]);
+          if (walked + segDist >= targetNM) {
+            var t = (targetNM - walked) / segDist;
+            var lat = pts[i].lat + t * (pts[i+1].lat - pts[i].lat);
+            var lon = pts[i].lon + t * (pts[i+1].lon - pts[i].lon);
+            return { lat, lon };
+          }
+          walked += segDist;
+        }
+        return null; // beyond route length
+      };
+
+      // Fetch weather when waypoints, cruise alt, or dep time changes
+      React.useEffect(() => {
+        if (waypoints.length < 2) return;
+        var timer = setTimeout(function() {
+          fetchRouteWeather(waypoints, cruiseAlt, tocTodRef.current);
+        }, 1200);
+        return function() { clearTimeout(timer); };
+      }, [waypoints, cruiseAlt, depTime]);
+
+      // When TOC/TOD profile first becomes available (or distances change), re-fetch
+      // with correct altitude profile. Use ref to avoid re-fetching on wx-only updates.
+      const lastProfileRef = React.useRef("");
+      React.useEffect(() => {
+        if (!tocTod || tocTod.infeasible || waypoints.length < 2) return;
+        var profileKey = tocTod.tocNM.toFixed(2) + "_" + tocTod.todNM.toFixed(2) + "_" + cruiseAlt;
+        if (profileKey === lastProfileRef.current) return;
+        lastProfileRef.current = profileKey;
+        var timer = setTimeout(function() {
+          fetchRouteWeather(waypoints, cruiseAlt, tocTod);
+        }, 400);
+        return function() { clearTimeout(timer); };
+      }, [tocTod]);
+
+      // Auto cruise waypoint — insert midpoint into waypoints state when no user cruise fixes exist
+      const autoCruiseIdRef = React.useRef(null);
+      React.useEffect(() => {
+        // Work only with non-auto waypoints for all calculations
+        var baseWps = waypoints.filter(function(wp) { return !wp._autoId; });
+
+        if (!tocTod || tocTod.infeasible || !cruiseAlt || baseWps.length < 2) {
+          if (autoCruiseIdRef.current) {
+            var id = autoCruiseIdRef.current;
+            autoCruiseIdRef.current = null;
+            setWaypoints(function(prev) { return prev.filter(function(wp) { return wp._autoId !== id; }); });
+          }
+          return;
+        }
+
+        var tocNM = tocTod.tocNM;
+        var todStartNM = tocTod.totalDist - tocTod.todNM;
+
+        // Check if any user (non-auto) intermediate waypoint falls in cruise segment
+        var cumNM = 0;
+        var hasCruiseFix = false;
+        for (var i = 0; i < baseWps.length - 1; i++) {
+          cumNM += calcDist(baseWps[i], baseWps[i+1]);
+          if (i < baseWps.length - 2 && cumNM > tocNM && cumNM <= todStartNM) {
+            hasCruiseFix = true; break;
+          }
+        }
+
+        if (hasCruiseFix) {
+          if (autoCruiseIdRef.current) {
+            var id2 = autoCruiseIdRef.current;
+            autoCruiseIdRef.current = null;
+            setWaypoints(function(prev) { return prev.filter(function(wp) { return wp._autoId !== id2; }); });
+          }
+          return;
+        }
+
+        // Compute midpoint along baseWps at the cruise midpoint distance
+        var midNM = (tocNM + todStartNM) / 2;
+        var walked = 0, midPt = null, insertAfter = -1;
+        for (var i = 0; i < baseWps.length - 1; i++) {
+          var seg = calcDist(baseWps[i], baseWps[i+1]);
+          if (walked + seg >= midNM) {
+            var t = (midNM - walked) / seg;
+            midPt = {
+              lat: baseWps[i].lat + t * (baseWps[i+1].lat - baseWps[i].lat),
+              lon: baseWps[i].lon + t * (baseWps[i+1].lon - baseWps[i].lon),
+              id: "MID", name: "Cruise Midpoint", type: "custom",
+            };
+            insertAfter = i; // insert after baseWps[i]
+            break;
+          }
+          walked += seg;
+        }
+        if (!midPt) return;
+
+        var newId = midPt.lat.toFixed(4) + "," + midPt.lon.toFixed(4);
+        if (autoCruiseIdRef.current === newId) return; // already at right position
+
+        var oldId = autoCruiseIdRef.current;
+        midPt._autoId = newId;
+        autoCruiseIdRef.current = newId;
+
+        setWaypoints(function(prev) {
+          // Remove old auto point first
+          var filtered = prev.filter(function(wp) { return !wp._autoId; }); // remove all auto points
+          // Find the index of baseWps[insertAfter] in filtered array, insert after it
+          var refWp = baseWps[insertAfter];
+          var refKey = refWp.lat.toFixed(4) + "," + refWp.lon.toFixed(4);
+          var idx = -1;
+          for (var j = 0; j < filtered.length; j++) {
+            if (filtered[j].lat.toFixed(4) + "," + filtered[j].lon.toFixed(4) === refKey) { idx = j; break; }
+          }
+          if (idx < 0) return filtered;
+          var next = filtered.slice();
+          next.splice(idx + 1, 0, midPt);
+          return next;
+        });
+      }, [tocTod, cruiseAlt, JSON.stringify(waypoints.filter(function(w){return !w._autoId;}).map(function(w){return w.lat.toFixed(4)+','+w.lon.toFixed(4);}))]);  // stable dep on actual wp positions
+      React.useEffect(() => {
+        if (!cruiseAlt || waypoints.length < 2) { setTocTod(null); return; }
+        var cruiseAltFt = parseFloat(cruiseAlt);
+        if (isNaN(cruiseAltFt) || cruiseAltFt <= 0) { setTocTod(null); return; }
+
+        var dep = waypoints[0];
+        var dest = waypoints[waypoints.length - 1];
+        var depKey = dep.lat.toFixed(4) + "," + dep.lon.toFixed(4);
+        var destKey = dest.lat.toFixed(4) + "," + dest.lon.toFixed(4);
+
+        var depElevFt = dep.elev || 0;
+        var destElevFt = dest.elev || 0;
+
+        // Use fetched surface temps for dep/dest, fetched cruise-level temp for cruise OAT
+        // legTemps[depKey] = surface temp at dep (fetched at field pressure level)
+        // legTemps for an en-route waypoint = temp at cruise pressure level
+        // Best cruise OAT: use the temp fetched at cruise pressure level from the first en-route waypoint
+        var oatDep = legTemps[depKey] !== undefined ? legTemps[depKey] : getISATemp(depElevFt);
+        var oatDest = legTemps[destKey] !== undefined ? legTemps[destKey] : getISATemp(destElevFt);
+
+        // Use cruise-level temp fetched at departure airport — correct pressure altitude for TOC calc
+        var oatCruise = cruiseLevelDepTemp !== null ? cruiseLevelDepTemp : getISATemp(cruiseAltFt);
+
+        var climb = acClimb(depElevFt, cruiseAltFt, oatDep, oatCruise);
+        var descent = acDescent(cruiseAltFt, destElevFt, oatCruise, oatDest);
+        var tocNM = climb.distNM;
+        var todNM = descent.distNM;
+
+        var totalDist = waypoints.slice(0,-1).reduce(function(s, wp, i) {
+          return s + calcDist(wp, waypoints[i+1]);
+        }, 0);
+
+        if (tocNM + todNM > totalDist) {
+          setTocTod({ infeasible: true, tocNM, todNM, totalDist });
+          return;
+        }
+
+        // Compute actual lat/lon of TOC and TOD along the route
+        var interpPt = function(fromEnd, targetNM) {
+          var pts = fromEnd ? waypoints.slice().reverse() : waypoints;
+          var walked = 0;
+          for (var j = 0; j < pts.length - 1; j++) {
+            var seg = calcDist(pts[j], pts[j+1]);
+            if (walked + seg >= targetNM) {
+              var t2 = (targetNM - walked) / seg;
+              return { lat: pts[j].lat + t2*(pts[j+1].lat-pts[j].lat), lon: pts[j].lon + t2*(pts[j+1].lon-pts[j].lon) };
+            }
+            walked += seg;
+          }
+          return null;
+        };
+        var tocPt = interpPt(false, tocNM);
+        var todPt = interpPt(true, todNM);
+
+        // Find TC of the leg each point falls on
+        var getTCForDist = function(distNM) {
+          var walked = 0;
+          for (var j = 0; j < waypoints.length - 1; j++) {
+            var seg = calcDist(waypoints[j], waypoints[j+1]);
+            if (walked + seg >= distNM) return calcHeading(waypoints[j], waypoints[j+1]);
+            walked += seg;
+          }
+          return null;
+        };
+        var tocTC = getTCForDist(tocNM);
+        var todTC = getTCForDist(totalDist - todNM);
+
+        setTocTod({ tocNM, todNM, totalDist, climb, descent, usingFetchedTemps: cruiseLevelDepTemp !== null, oatDep, oatCruise, oatDest, tocPt, todPt, tocTC, todTC });
+        setTocTodWx({ tocWx: null, todWx: null, tocVar: null, todVar: null });
+
+        // Fetch weather and variation at TOC/TOD points at cruise pressure level
+        if (tocPt || todPt) {
+          var dateStr = depTime ? depTime.slice(0,10) : new Date().toISOString().slice(0,10);
+          var targetTime2 = new Date(depTime);
+          var vars = altToPressureVars(cruiseAltFt);
+          var fetchPtWeather = async function(pt) {
+            if (!pt) return null;
+            try {
+              var pVars = altToPressureVars(cruiseAltFt);
+              var pvHourly = pVars.wspd + "," + pVars.wdir + "," + pVars.temp;
+              var url = "https://metar-proxy.mamillh01.workers.dev/?type=openmeteo&lat=" + pt.lat + "&lon=" + pt.lon + "&hourly=" + pvHourly;
+              var res = await fetch(url);
+              if (!res.ok) return null;
+              var data = await res.json();
+              if (!data.hourly) return null;
+              var times = data.hourly.time;
+              var best = 0, bestDiff = Infinity;
+              for (var t = 0; t < times.length; t++) {
+                var diff = Math.abs(new Date(times[t] + ":00Z") - targetTime2);
+                if (diff < bestDiff) { bestDiff = diff; best = t; }
+              }
+              return { wspd: Math.round(data.hourly[pVars.wspd][best]), wdir: Math.round(data.hourly[pVars.wdir][best]), temp: Math.round(data.hourly[pVars.temp][best] * 10) / 10 };
+            } catch(e) { return null; }
+          };
+          var fetchPtVar = async function(pt) {
+            if (!pt) return null;
+            try {
+              var res = await fetch("https://metar-proxy.mamillh01.workers.dev/?type=variation&lat=" + pt.lat + "&lon=" + pt.lon + "&date=" + dateStr);
+              var data = await res.json();
+              return data.variation != null ? Math.round(data.variation) : null;
+            } catch(e) { return null; }
+          };
+          Promise.all([fetchPtWeather(tocPt), fetchPtWeather(todPt), fetchPtVar(tocPt), fetchPtVar(todPt)])
+            .then(function(res) {
+              setTocTodWx({ tocWx: res[0], todWx: res[1], tocVar: res[2], todVar: res[3] });
+            });
+        }
+      }, [cruiseAlt, waypoints, legTemps, cruiseLevelDepTemp, cruiseLevelDestTemp]);
+
+      // Map altitude (ft) to closest Open-Meteo pressure level variable names
+      const altToPressureVars = (altFt) => {
+        var ft = parseFloat(altFt) || 3000;
+        if (ft < 3500)       return { wspd: "wind_speed_1000hPa", wdir: "wind_direction_1000hPa", temp: "temperature_1000hPa" };
+        if (ft < 7500)       return { wspd: "wind_speed_850hPa",  wdir: "wind_direction_850hPa",  temp: "temperature_850hPa" };
+        if (ft < 14000)      return { wspd: "wind_speed_700hPa",  wdir: "wind_direction_700hPa",  temp: "temperature_700hPa" };
+        if (ft < 26000)      return { wspd: "wind_speed_500hPa",  wdir: "wind_direction_500hPa",  temp: "temperature_500hPa" };
+        return                      { wspd: "wind_speed_250hPa",  wdir: "wind_direction_250hPa",  temp: "temperature_250hPa" };
+      };
+
+      const fetchRouteWeather = async (wps, cruise, currentTocTod) => {
+        if (wps.length < 2) return;
+        setWeatherLoading(true); setWeatherError("");
+        var targetTime = new Date(depTime);
+        var cruiseFt = parseFloat(cruise) || 0;
+        var dep = wps[0], dest = wps[wps.length - 1];
+        var depElevFt = dep.elev || 0;
+        var destElevFt = dest.elev || 0;
+
+        // Fetch ALL pressure levels in one request per waypoint, pick the right one
+        var HOURLY_VARS = "wind_speed_1000hPa,wind_direction_1000hPa,temperature_1000hPa,wind_speed_850hPa,wind_direction_850hPa,temperature_850hPa,wind_speed_700hPa,wind_direction_700hPa,temperature_700hPa,wind_speed_500hPa,wind_direction_500hPa,temperature_500hPa";
+        var fetchAllLevels = async function(lat, lon) {
+          var url = "https://metar-proxy.mamillh01.workers.dev/?type=openmeteo&lat=" + lat + "&lon=" + lon + "&hourly=" + HOURLY_VARS;
+          var res = await fetch(url);
+          if (!res.ok) return null;
+          var data = await res.json();
+          if (!data.hourly) return null;
+          var times = data.hourly.time;
+          var best = 0, bestDiff = Infinity;
+          for (var t = 0; t < times.length; t++) {
+            var diff = Math.abs(new Date(times[t] + ":00Z") - targetTime);
+            if (diff < bestDiff) { bestDiff = diff; best = t; }
+          }
+          return { hourly: data.hourly, best: best };
+        };
+
+        var extractAtAlt = function(fetched, altFt) {
+          if (!fetched) return null;
+          var vars = altToPressureVars(altFt);
+          var h = fetched.hourly, b = fetched.best;
+          return {
+            wspd: Math.round(h[vars.wspd][b]),
+            wdir: Math.round(h[vars.wdir][b]),
+            temp: Math.round(h[vars.temp][b] * 10) / 10,
+          };
+        };
+
+        try {
+          // Use passed-in tocTod for altitude profile — avoids ISA approximation errors
+          var syncTocNM = currentTocTod && !currentTocTod.infeasible ? currentTocTod.tocNM : null;
+          var syncTodNM = currentTocTod && !currentTocTod.infeasible ? currentTocTod.todNM : null;
+          var syncTotalNM = 0;
+          for (var j = 0; j < wps.length-1; j++) syncTotalNM += calcDist(wps[j], wps[j+1]);
+
+          // Fetch each waypoint sequentially with small delay to avoid rate limiting
+          var fetched = [];
+          for (var idx2 = 0; idx2 < wps.length; idx2++) {
+            if (idx2 > 0) await new Promise(function(r) { setTimeout(r, 500); });
+            fetched.push(await fetchAllLevels(wps[idx2].lat, wps[idx2].lon));
+          }
+
+          var newTemps = {}, newWindDirs = {}, newWindSpds = {};
+          fetched.forEach(function(f, i) {
+            if (!f) return;
+            var wp = wps[i];
+            var key = wp.lat.toFixed(4) + "," + wp.lon.toFixed(4);
+            var isFirst = i === 0, isLast = i === wps.length - 1;
+            var altFt;
+            if (isFirst) {
+              altFt = depElevFt;
+            } else if (isLast) {
+              altFt = destElevFt;
+            } else {
+              if (syncTocNM === null) {
+                altFt = cruiseFt || 3000;
+              } else {
+                var cumNM = 0;
+                for (var j = 0; j <= i; j++) if (j < wps.length-1) cumNM += calcDist(wps[j], wps[j+1]);
+                var todStartNM = syncTotalNM - syncTodNM;
+                if (cumNM <= syncTocNM) {
+                  var t2 = syncTocNM > 0 ? cumNM / syncTocNM : 1;
+                  altFt = depElevFt + t2 * (cruiseFt - depElevFt);
+                } else if (cumNM >= todStartNM) {
+                  var t2 = syncTodNM > 0 ? (cumNM - todStartNM) / syncTodNM : 1;
+                  altFt = cruiseFt - t2 * (cruiseFt - destElevFt);
+                } else {
+                  altFt = cruiseFt;
+                }
+              }
+            }
+            var r = extractAtAlt(f, altFt);
+            if (r) { newTemps[key] = r.temp; newWindDirs[key] = r.wdir; newWindSpds[key] = r.wspd; }
+          });
+          setLegTemps(newTemps);
+          setLegWindDirs(newWindDirs);
+          setLegWindSpds(newWindSpds);
+
+          // Cruise-level temps at dep/dest for TOC/TOD calc
+          if (cruiseFt > 0) {
+            var depCruise = extractAtAlt(fetched[0], cruiseFt);
+            var destCruise = extractAtAlt(fetched[fetched.length-1], cruiseFt);
+            setCruiseLevelDepTemp(depCruise ? depCruise.temp : null);
+            setCruiseLevelDestTemp(destCruise ? destCruise.temp : null);
+          }
+        } catch(e) {
+          setWeatherError("Weather fetch failed: " + e.message);
+        }
+        setWeatherLoading(false);
+      };
+
+      React.useEffect(() => {
+        if (!mapRef.current || leafletMap.current) return;
+        var map = L.map(mapRef.current, { center: [39.5, -98.35], zoom: 7, minZoom: 8, maxZoom: 19, zoomControl: true });
+        leafletMap.current = map;
+        var osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" });
+        var sectional = L.tileLayer(
+          "https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}",
+          { minZoom: 8, maxZoom: 11, minNativeZoom: 5, maxNativeZoom: 13, attribution: "FAA VFR Sectional Charts" }
+        );
+        var satellite = L.tileLayer(
+          "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+          { maxZoom: 19, attribution: "© Esri, Maxar, Earthstar Geographics" }
+        );
+        sectional.addTo(map);
+        L.control.layers({ "VFR Sectional": sectional, "Satellite": satellite, "Street Map": osm }, {}, { position: "topright" }).addTo(map);
+        L.control.scale({ imperial: true, metric: false }).addTo(map);
+
+        // Delegated listener for wp-delete-btn — attached once to the map container
+        var mapContainer = map.getContainer();
+        var handleDeleteClick = function(e) {
+          var btn = e.target.closest(".wp-delete-btn");
+          if (!btn) return;
+          e.stopPropagation();
+          e.preventDefault();
+          var key = btn.getAttribute("data-wpkey");
+          if (key) {
+            setWaypointsRef.current(function(prev) {
+              return prev.filter(function(w) {
+                return (w.lat.toFixed(4) + "," + w.lon.toFixed(4)) !== key;
+              });
+            });
+          }
+        };
+        mapContainer.addEventListener("click", handleDeleteClick, true);
+
+        return () => { mapContainer.removeEventListener("click", handleDeleteClick, true); map.remove(); leafletMap.current = null; };
+      }, []);
+
+      // Keep setWaypoints accessible from Leaflet events
+      const setWaypointsRef = React.useRef(setWaypoints);
+      React.useEffect(() => { setWaypointsRef.current = setWaypoints; }, [setWaypoints]);
+      const wpNamesRef = React.useRef(wpNames);
+      React.useEffect(() => { wpNamesRef.current = wpNames; }, [wpNames]);
+      const waypointsRef = React.useRef(waypoints);
+      React.useEffect(() => { waypointsRef.current = waypoints; }, [waypoints]);
+
+      // Fetch variation for any new waypoints via WMM through worker
+      React.useEffect(() => {
+        if (waypoints.length === 0) return;
+        var dateStr = depTime ? depTime.slice(0,10) : new Date().toISOString().slice(0,10);
+        waypoints.forEach(function(wp) {
+          // Use lat/lon as stable cache key — unaffected by index shifts
+          var cacheKey = wp.lat.toFixed(4) + "," + wp.lon.toFixed(4);
+          setLegVars(function(prev) {
+            if (prev[cacheKey] !== undefined) return prev;
+            fetch("https://metar-proxy.mamillh01.workers.dev/?type=variation&lat=" + wp.lat + "&lon=" + wp.lon + "&date=" + dateStr)
+              .then(function(r) { return r.json(); })
+              .then(function(data) {
+                if (data.variation != null) setLegVars(function(p) { return { ...p, [cacheKey]: data.variation }; });
+              }).catch(function() {});
+            return prev;
+          });
+        });
+      }, [waypoints]);
+
+
+      // Redraw route whenever waypoints change
+      React.useEffect(() => {
+        var map = leafletMap.current;
+        if (!map) return;
+        markersRef.current.forEach(function(m) { map.removeLayer(m); });
+        markersRef.current = [];
+        if (routeLayerRef.current) { map.removeLayer(routeLayerRef.current); routeLayerRef.current = null; }
+        if (waypoints.length === 0) return;
+
+        // Draw markers - draggable to reorder
+        waypoints.forEach(function(wp, i) {
+          var isFirst = i === 0;
+          var color = isFirst ? "#16a34a" : "#7c3aed";
+          var marker = L.circleMarker([wp.lat, wp.lon], {
+            radius: 12, fillColor: color, color: "#fff",
+            weight: 3, opacity: 1, fillOpacity: 1
+          }).addTo(map);
+          marker.bindTooltip(
+            "<b>" + wp.id + "</b><br>" + wp.name,
+            { permanent: false, direction: "top", className: "aerocalc-tooltip" }
+          );
+          markersRef.current.push(marker);
+
+          var wpKey = wp.lat.toFixed(4) + "," + wp.lon.toFixed(4);
+          var displayName = (wpNamesRef.current && wpNamesRef.current[wpKey]) ? wpNamesRef.current[wpKey] : wp.id;
+          var isCustomWp = wp.type === "custom" && !wp._autoId;
+          var labelHtml = "<div style='display:flex;align-items:center;gap:5px;position:absolute;left:14px;top:-10px'>" +
+            "<span style='font-family:Courier New;font-size:11px;font-weight:bold;color:#fff;background:" + color + ";padding:2px 6px;border-radius:4px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.6)'>" + displayName + "</span>" +
+            (isCustomWp ? "<span class='wp-delete-btn' data-wpkey='" + wpKey + "' style='cursor:pointer;background:rgba(0,0,0,0.75);color:#fff;border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;line-height:1;box-shadow:0 1px 4px rgba(0,0,0,0.5);flex-shrink:0'>×</span>" : "") +
+            "</div>";
+          var label = L.marker([wp.lat, wp.lon], {
+            icon: L.divIcon({
+              className: "",
+              html: labelHtml,
+              iconSize: [0, 0],
+              iconAnchor: [0, 0]
+            })
+          }).addTo(map);
+          if (isCustomWp) {
+            label.on("add", function() {
+              var el = label.getElement();
+              if (el) el.style.pointerEvents = "auto";
+            });
+          }
+          markersRef.current.push(label);
+        });
+
+        // Draw visible route line
+        var latlngs = waypoints.map(function(wp) { return [wp.lat, wp.lon]; });
+        routeLayerRef.current = L.polyline(latlngs, { color: "#6d28d9", weight: 5, opacity: 1.0 }).addTo(map);
+
+        // Invisible wider hit-area line for drag-to-insert
+        var hitLine = L.polyline(latlngs, { color: "transparent", weight: 20, opacity: 0 }).addTo(map);
+        markersRef.current.push(hitLine);
+
+        // Drag ghost marker
+        var ghost = null;
+        var dragging = false;
+        var insertIdx = null;
+
+        hitLine.on("mousedown", function(e) {
+          L.DomEvent.stopPropagation(e);
+          map.dragging.disable();
+          dragging = true;
+
+          // Find which segment was clicked using point-to-segment distance
+          var pts = waypointsRef.current;
+          var best = 0, bestDist = Infinity;
+          var clickPt = map.latLngToLayerPoint(e.latlng);
+          for (var j = 0; j < pts.length - 1; j++) {
+            var p1 = map.latLngToLayerPoint(L.latLng(pts[j].lat, pts[j].lon));
+            var p2 = map.latLngToLayerPoint(L.latLng(pts[j+1].lat, pts[j+1].lon));
+            // Point to segment distance
+            var dx = p2.x - p1.x, dy = p2.y - p1.y;
+            var lenSq = dx*dx + dy*dy;
+            var t = lenSq > 0 ? Math.max(0, Math.min(1, ((clickPt.x-p1.x)*dx + (clickPt.y-p1.y)*dy) / lenSq)) : 0;
+            var nearX = p1.x + t*dx, nearY = p1.y + t*dy;
+            var d = Math.sqrt((clickPt.x-nearX)*(clickPt.x-nearX) + (clickPt.y-nearY)*(clickPt.y-nearY));
+            if (d < bestDist) { bestDist = d; best = j; }
+          }
+          insertIdx = best + 1;
+
+          ghost = L.circleMarker(e.latlng, {
+            radius: 9, fillColor: "#6d28d9", color: "#fff",
+            weight: 2, opacity: 0.8, fillOpacity: 1,
+          }).addTo(map);
+
+          var dragLine = null;
+
+          function buildDragLatlngs(latlng) {
+            var pts = waypointsRef.current;
+            var result = [];
+            for (var k = 0; k < pts.length; k++) {
+              if (k === insertIdx) result.push([latlng.lat, latlng.lng]);
+              result.push([pts[k].lat, pts[k].lon]);
+            }
+            if (insertIdx >= pts.length) result.push([latlng.lat, latlng.lng]);
+            return result;
+          }
+
+          function onMove(ev) {
+            if (!dragging || !ghost) return;
+            ghost.setLatLng(ev.latlng);
+            var lls = buildDragLatlngs(ev.latlng);
+            if (dragLine) { dragLine.setLatLngs(lls); }
+            else { dragLine = L.polyline(lls, { color: "#6d28d9", weight: 4, opacity: 0.8, dashArray: "8,4" }).addTo(map); }
+          }
+
+          function onUp(ev) {
+            if (!dragging) return;
+            dragging = false;
+            map.dragging.enable();
+            if (ghost) { map.removeLayer(ghost); ghost = null; }
+            if (dragLine) { map.removeLayer(dragLine); dragLine = null; }
+            map.off("mousemove", onMove);
+            map.off("mouseup", onUp);
+
+            // Insert new waypoint
+            var ll = ev.latlng;
+            var newWp = {
+              id: ll.lat.toFixed(2) + "," + ll.lng.toFixed(2),
+              name: "Custom Waypoint",
+              lat: ll.lat,
+              lon: ll.lng,
+              type: "custom"
+            };
+            setWaypointsRef.current(function(prev) {
+              var next = [...prev];
+              next.splice(insertIdx, 0, newWp);
+              return next;
+            });
+          }
+
+          map.on("mousemove", onMove);
+          map.on("mouseup", onUp);
+        });
+
+        // Cursor hint
+        hitLine.on("mouseover", function() { map.getContainer().style.cursor = "crosshair"; });
+        hitLine.on("mouseout", function() { map.getContainer().style.cursor = ""; });
+
+        // Fit map to route only on first plot
+        if (waypoints.length >= 2 && routeLayerRef.current && !hasFitRef.current) {
+          hasFitRef.current = true;
+          map.fitBounds(routeLayerRef.current.getBounds(), { padding: [40, 40] });
+        }
+        if (waypoints.length === 0) hasFitRef.current = false;
+      }, [waypoints, wpNames]);
+
+      // Draw TOC/TOD markers whenever tocTod or waypoints change
+      React.useEffect(() => {
+        var map = leafletMap.current;
+        if (!map) return;
+        // Clear old TOC/TOD markers
+        tocTodMarkersRef.current.forEach(function(m) { map.removeLayer(m); });
+        tocTodMarkersRef.current = [];
+        if (!tocTod || tocTod.infeasible || waypoints.length < 2) return;
+
+        // Helper: walk NM along route from start or end, return {lat, lon}
+        var interp = function(fromEnd, targetNM) {
+          var pts = fromEnd ? waypoints.slice().reverse() : waypoints;
+          var walked = 0;
+          for (var i = 0; i < pts.length - 1; i++) {
+            var seg = calcDist(pts[i], pts[i+1]);
+            if (walked + seg >= targetNM) {
+              var t = (targetNM - walked) / seg;
+              return {
+                lat: pts[i].lat + t * (pts[i+1].lat - pts[i].lat),
+                lon: pts[i].lon + t * (pts[i+1].lon - pts[i].lon),
+              };
+            }
+            walked += seg;
+          }
+          return null;
+        };
+
+        var tocPt = interp(false, tocTod.tocNM);
+        var todPt = interp(true, tocTod.todNM);
+
+        var addSpecialMarker = function(pt, label, color) {
+          if (!pt) return;
+          var marker = L.circleMarker([pt.lat, pt.lon], {
+            radius: 10, fillColor: color, color: "#fff",
+            weight: 3, opacity: 1, fillOpacity: 1
+          }).addTo(map);
+          marker.bindTooltip("<b>" + label + "</b>", { permanent: false, direction: "top" });
+          tocTodMarkersRef.current.push(marker);
+
+          var lbl = L.marker([pt.lat, pt.lon], {
+            icon: L.divIcon({
+              className: "",
+              html: "<div style='font-family:Courier New;font-size:13px;font-weight:bold;color:#fff;background:" + color + ";padding:3px 8px;border-radius:4px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.6);position:absolute;left:14px;top:-10px'>" + label + "</div>",
+              iconSize: [0, 0],
+              iconAnchor: [0, 0]
+            })
+          }).addTo(map);
+          tocTodMarkersRef.current.push(lbl);
+        };
+
+        addSpecialMarker(tocPt, "TOC", "#15803d");
+        addSpecialMarker(todPt, "TOD", "#1d4ed8");
+      }, [tocTod, waypoints]);
+
+      const resolveRoute = async () => {
+        var ids = routeInput.trim().toUpperCase().split(/[\s,]+/).filter(Boolean);
+        if (ids.length < 2) { setError("Enter at least 2 airports e.g. KLAF KINDL KGYY"); return; }
+        setLoading(true); setError("");
+        try {
+          var results = await Promise.all(ids.map(async function(id) {
+            var res = await fetch("https://metar-proxy.mamillh01.workers.dev/?id=" + id + "&type=waypoint");
+            if (!res.ok) throw new Error("Not found: " + id);
+            var data = await res.json();
+            if (data.error) throw new Error(data.error);
+            return data;
+          }));
+          setWaypoints(results);
+          setLegVars({});
+          // Auto-populate elevations for airports
+          var newAlts = {};
+          results.forEach(function(wp) {
+            if (wp.elev != null) {
+              var key = wp.lat.toFixed(4) + "," + wp.lon.toFixed(4);
+              newAlts[key] = wp.elev;
+            }
+          });
+          if (Object.keys(newAlts).length > 0) {
+            setLegAlts(prev => ({ ...prev, ...newAlts }));
+          }
+
+        } catch(e) {
+          setError(e.message || "Could not resolve one or more airports");
+        }
+        setLoading(false);
+      };
+
+      // Calculate total distance
+      const calcDist = (wp1, wp2) => {
+        var R = 3440.065; // NM
+        var dLat = (wp2.lat - wp1.lat) * Math.PI / 180;
+        var dLon = (wp2.lon - wp1.lon) * Math.PI / 180;
+        var a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(wp1.lat*Math.PI/180)*Math.cos(wp2.lat*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      };
+
+      const calcHeading = (wp1, wp2) => {
+        var dLon = (wp2.lon - wp1.lon) * Math.PI / 180;
+        var lat1 = wp1.lat * Math.PI / 180, lat2 = wp2.lat * Math.PI / 180;
+        var y = Math.sin(dLon) * Math.cos(lat2);
+        var x = Math.cos(lat1)*Math.sin(lat2) - Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
+        var hdg = Math.atan2(y, x) * 180 / Math.PI;
+        return ((hdg + 360) % 360).toFixed(0);
+      };
+
+      // TAS from IAS using density altitude formula
+      // TAS = IAS / sqrt(rho/rho0), where rho/rho0 = (1 - 6.8755856e-6 * PA)^4.2558797 * (288.15 / (288.15 + deltaT))
+      const iasToTAS = (ias, altFt, oatC) => {
+        var PA = altFt; // pressure altitude ≈ indicated altitude (no altimeter correction)
+        var stdTempK = 288.15 - 0.0019812 * PA; // ISA temp at pressure alt in K
+        var oatK = oatC + 273.15;
+        var densityRatio = Math.pow(1 - 6.8755856e-6 * PA, 4.2558797) * (stdTempK / oatK);
+        return Math.round(ias / Math.sqrt(densityRatio));
+      };
+
+      // Get TAS for a waypoint based on its position in the flight profile
+      const getNavlogTAS = (cumDistNM, altFt, oatC) => {
+        if (!cruiseAlt || !tocTod || tocTod.infeasible) return null;
+        var cruiseFt = parseFloat(cruiseAlt);
+        var totalNM = tocTod.totalDist;
+        var tocNM = tocTod.tocNM;
+        var todStartNM = totalNM - tocTod.todNM;
+        var oatSafe = oatC !== undefined ? oatC : getISATemp(altFt);
+        if (cumDistNM <= tocNM) {
+          return iasToTAS(CLIMB_KIAS, altFt, oatSafe);
+        } else if (cumDistNM >= todStartNM) {
+          return iasToTAS(DESCENT_KIAS, altFt, oatSafe);
+        } else {
+          var tas = acCruiseTAS(cruiseFt, oatC !== undefined ? oatC : getISATemp(cruiseFt), cruisePower);
+          return tas || iasToTAS(DESCENT_KIAS, cruiseFt, oatC !== undefined ? oatC : getISATemp(cruiseFt));
+        }
+      };
+
+      var legs = waypoints.length > 1 ? waypoints.slice(0,-1).map(function(wp, i) {
+        var dist = calcDist(wp, waypoints[i+1]);
+        var tc = calcHeading(wp, waypoints[i+1]);
+        return { from: wp, to: waypoints[i+1], dist: dist.toFixed(1), tc };
+      }) : [];
+      var totalDist = legs.reduce(function(s, l) { return s + parseFloat(l.dist); }, 0);
+
+      var hdr1 = { fontSize: "9px", letterSpacing: "1px", color: C.isLight ? "#374151" : C.dimmest, fontFamily: mono, textAlign: "center", padding: "4px 3px", background: C.isLight ? "#dde2eb" : "#0d1420", fontWeight: "bold", textTransform: "uppercase" };
+      var hdr2 = { fontSize: "8px", letterSpacing: "0.5px", color: C.isLight ? "#374151" : C.dimmest, fontFamily: mono, textAlign: "center", padding: "3px 2px", background: C.isLight ? "#e8ecf3" : "#0a1018", borderBottom: (C.isLight ? "2px" : C.cardBorder) + " solid " + C.border };
+      var cell = { fontSize: "12px", fontFamily: mono, textAlign: "center", padding: "7px 3px", borderBottom: (C.isLight ? "1.5px" : C.cardBorder) + " solid " + (C.isLight ? "#c0c8d4" : C.borderDim), color: C.text, fontWeight: C.isLight ? "600" : "normal" };
+      var cellDim = { ...cell, color: C.isLight ? "#374151" : C.dimmest, fontSize: "10px" };
+      var inputStyle = { width: "52px", background: C.isLight ? "#fff" : C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "2px", padding: "3px 4px", color: C.text, fontFamily: mono, fontSize: "11px", textAlign: "center" };
+      var future = { ...cell, color: C.isLight ? "#9ca3af" : C.borderDim, fontSize: "10px" };
+      var dash = C.isLight ? "#9ca3af" : C.borderDim;
+      var tCol = C.isLight ? "#0e6aba" : C.cool;
+      var gCol = C.isLight ? "#166534" : C.green;
+
+      // Calculate WCA, TH, MH, GS for a leg
+      // windDir/windSpd = wind at TO waypoint, tc = true course, tas = true airspeed, variation = mag var (+ east, - west)
+      const calcWindVectors = (tc, tas, windDir, windSpd, variation) => {
+        if (tas == null || windDir == null || windSpd == null) return null;
+        var tcRad = tc * Math.PI / 180;
+        var wdRad = windDir * Math.PI / 180;
+        // Wind angle relative to course (0 = headwind, 90 = crosswind from right)
+        var windAngleRad = wdRad - tcRad;
+        // Cross-wind and head-wind components
+        var crossWind = windSpd * Math.sin(windAngleRad); // + = from right
+        var headWind = windSpd * Math.cos(windAngleRad);  // + = headwind
+        // WCA in degrees (+ = correct right, - = correct left)
+        var wcaRad = Math.asin(Math.max(-1, Math.min(1, crossWind / tas)));
+        var wca = wcaRad * 180 / Math.PI;
+        // True Heading
+        var th = ((tc + wca) + 360) % 360;
+        // Magnetic Heading (variation: positive = east, negative = west)
+        var mh = ((th - variation) + 360) % 360;
+        // Ground Speed
+        var gs = Math.round(tas * Math.cos(wcaRad) - headWind);
+        return {
+          wca: Math.round(wca),
+          th: Math.round(th),
+          mh: Math.round(mh),
+          gs: gs > 0 ? gs : null
+        };
+      };
+
+      // Format minutes as H:MM
+      const openRouteManager = async () => {
+        if (!user) { setShowNavlogAuth(true); return; }
+        setShowRouteManager(true);
+        setRoutesLoading(true);
+        setSaveRouteName(routeInput || "");
+        sbClient.from("saved_routes").select("*").eq("user_id", user.id).order("created_at", { ascending: false })
+          .then(function(res) {
+            setSavedRoutes(res.data || []);
+            setRoutesLoading(false);
+          });
+      };
+
+      const saveRoute = async () => {
+        if (!user || !saveRouteName.trim()) return;
+        setSaveStatus("saving");
+        var routeData = {
+          routeInput, waypoints, wpNames, cruiseAlt, cruisePower, depTime,
+          legTemps, legWindDirs, legWindSpds, legVars, navlogAircraft,
+        };
+        var res = await sbClient.from("saved_routes").insert({
+          user_id: user.id,
+          name: saveRouteName.trim(),
+          route_data: routeData,
+          created_at: new Date().toISOString(),
+        });
+        if (res.error) { setSaveStatus("error"); return; }
+        setSaveStatus("saved");
+        // Refresh list
+        sbClient.from("saved_routes").select("*").eq("user_id", user.id).order("created_at", { ascending: false })
+          .then(function(r) { setSavedRoutes(r.data || []); });
+        setTimeout(function() { setSaveStatus(null); }, 2000);
+      };
+
+      const loadRoute = (route) => {
+        var d = route.route_data;
+        if (d.routeInput !== undefined) setRouteInput(d.routeInput);
+        if (d.waypoints) setWaypoints(d.waypoints);
+        if (d.wpNames) setWpNames(d.wpNames);
+        if (d.cruiseAlt) setCruiseAlt(d.cruiseAlt);
+        if (d.cruisePower) setCruisePower(d.cruisePower);
+        if (d.depTime) setDepTime(d.depTime);
+        if (d.legTemps) setLegTemps(d.legTemps);
+        if (d.legWindDirs) setLegWindDirs(d.legWindDirs);
+        if (d.legWindSpds) setLegWindSpds(d.legWindSpds);
+        if (d.legVars) setLegVars(d.legVars);
+        if (d.navlogAircraft) setNavlogAircraftRaw(d.navlogAircraft);
+        setShowRouteManager(false);
+      };
+
+      const deleteRoute = async (id) => {
+        await sbClient.from("saved_routes").delete().eq("id", id).eq("user_id", user.id);
+        setSavedRoutes(function(prev) { return prev.filter(function(r) { return r.id !== id; }); });
+      };
+
+      const printNavlog = () => {
+        var dep = waypoints[0], dest = waypoints[waypoints.length-1];
+        var depDate = depTime ? new Date(depTime).toLocaleString("en-US", { month:"short", day:"numeric", year:"numeric", hour:"2-digit", minute:"2-digit" }) : "—";
+
+        // Cell builders — light background for reliable printing
+        var S = "font-family:'Courier New',monospace;";
+        var th = function(t) { return "<th style='" + S + "font-size:9px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;background:#1a1a1a;color:#fff;padding:7px 5px;border:1px solid #999;text-align:center;white-space:nowrap'>" + t + "</th>"; };
+        var td  = function(t, extra) { return "<td style='" + S + "font-size:11px;padding:6px 5px;border:1px solid #ccc;text-align:center;color:#111;" + (extra||"") + "'>" + t + "</td>"; };
+        var tdB  = function(t, extra) { return td(t, "font-weight:bold;color:#000;" + (extra||"")); };
+        var tdMH = function(t) { return "<td style='" + S + "font-size:12px;font-weight:bold;padding:6px 7px;border:3px solid #2a7a00;text-align:center;background:#d4f5a0;color:#1a4a00;letter-spacing:1px'>" + t + "</td>"; };
+        var tdG  = function(t) { return td(t, "color:#166534;font-weight:bold"); };
+        var tdBl = function(t) { return td(t, "color:#1d4ed8;font-weight:bold"); };
+        var tdPu = function(t) { return td(t, "color:#6b21a8;font-weight:bold"); };
+        var tdCy = function(t) { return td(t, "color:#0e7490;"); };
+        var tdDim = function(t) { return td(t, "color:#aaa;background:#f8f8f8;"); };
+
+        // Helper: compute and render a full data row given leg TC + wk for wind/temp/var
+        var dataRow = function(legTc, wk, altFt, cumNM, legNM, etel, fuell, rowStyle, identCell, nameCell) {
+          var v = legVars[wk];
+          var oatVal = legTemps[wk];
+          var tas2 = getNavlogTAS(cumNM, altFt, oatVal);
+          var wv2 = calcWindVectors(parseFloat(legTc) || 0, tas2, legWindDirs[wk], legWindSpds[wk], v !== undefined ? v : 0);
+          var row = "<tr style='" + rowStyle + "'>";
+          row += identCell + nameCell;
+          row += tdB(Math.round(altFt));
+          row += td(legWindDirs[wk] !== undefined ? legWindDirs[wk] + "°" : "—");
+          row += td(legWindSpds[wk] !== undefined ? legWindSpds[wk] + "kt" : "—");
+          row += tdPu(tas2 ? tas2 + "kt" : "—");
+          row += tdB(legTc + "°");
+          row += td(wv2 ? (wv2.wca > 0 ? "R" : wv2.wca < 0 ? "L" : "") + Math.abs(wv2.wca) + "°" : "—");
+          row += tdCy(v !== undefined ? (v > 0 ? "E" : "W") + Math.abs(v) + "°" : "—");
+          row += tdMH(wv2 ? wv2.mh + "°" : "—");
+          row += legNM !== null ? tdB(typeof legNM === "number" ? legNM.toFixed(1) : legNM) : tdDim("—");
+          row += td(cumNM.toFixed(1), "color:#888");
+          row += tdB(wv2 && wv2.gs ? wv2.gs + "kt" : "—");
+          row += td(etel != null ? fmtETE(etel) : "—");
+          row += tdB(fuell != null ? fuell.toFixed(1) : "—");
+          row += tdCy(oatVal !== undefined ? oatVal + "°C" : "—");
+          row += "</tr>";
+          return row;
+        };
+
+        var headerHtml = "<tr>" + [
+          "IDENT","NAME","ALT FT","WIND DIR","WIND KT","TAS","TC°","WCA","VAR","MH","LEG NM","CUM NM","GS","ETE","FUEL GAL","OAT°C"
+        ].map(th).join("") + "</tr>";
+
+        var rowsHtml = "";
+        var cumDistAcc = 0;
+        var cruiseFt2 = parseFloat(cruiseAlt) || 0;
+        var depElev2 = dep.elev || 0, destElev2 = dest.elev || 0;
+
+        // Departure row
+        rowsHtml += "<tr style='background:#eeeeee'>";
+        rowsHtml += tdB(dep.id) + td(dep.name ? dep.name.slice(0,22) : "—", "font-size:9px;color:#555;text-align:left");
+        rowsHtml += td(dep.elev ? String(dep.elev) : "—");
+        for (var d = 0; d < 13; d++) rowsHtml += tdDim("—");
+        rowsHtml += "</tr>";
+
+        legs.forEach(function(leg, i) {
+          var wp = leg.to;
+          var wk = wp.lat.toFixed(4) + "," + wp.lon.toFixed(4);
+          cumDistAcc += parseFloat(leg.dist);
+          var ete2 = legCumETE[i], fuel2 = legCumFuel[i];
+          var prevCum = cumDistAcc - parseFloat(leg.dist);
+
+          // Interpolated altitude at this waypoint
+          var wpAlt2 = cruiseFt2;
+          if (tocTod && !tocTod.infeasible && cruiseFt2) {
+            var tocN = tocTod.tocNM, todS = tocTod.totalDist - tocTod.todNM;
+            if (cumDistAcc <= tocN) {
+              var t2 = tocN > 0 ? cumDistAcc/tocN : 1;
+              wpAlt2 = depElev2 + t2*(cruiseFt2-depElev2);
+            } else if (cumDistAcc > todS) {
+              var t3 = tocTod.todNM > 0 ? (cumDistAcc-todS)/tocTod.todNM : 1;
+              wpAlt2 = cruiseFt2 - t3*(cruiseFt2-destElev2);
+            }
+          }
+
+          // ── TOC row: uses this leg's TC and wk for wind/temp/var ──
+          if (tocTod && !tocTod.infeasible && tocTod.tocNM > prevCum && tocTod.tocNM <= cumDistAcc) {
+            var tocETE  = tocTod.climb ? tocTod.climb.timeMin : null;
+            var tocFuel = tocTod.climb ? tocTod.climb.fuelGal : null;
+            rowsHtml += dataRow(
+              leg.tc, wk, cruiseFt2, tocTod.tocNM, tocTod.tocNM,
+              tocETE, tocFuel,
+              "background:#e8fdf0;border-top:2px solid #16a34a;border-bottom:2px solid #16a34a",
+              "<td style='" + S + "font-size:12px;font-weight:bold;padding:6px 5px;border:1px solid #ccc;color:#166534;text-align:center'>TOC</td>",
+              "<td style='" + S + "font-size:9px;padding:6px 5px;border:1px solid #ccc;color:#166534;text-align:left'>Top of Climb</td>"
+            );
+          }
+
+          // ── TOD row: uses this leg's TC and wk ──
+          var todS2 = tocTod && !tocTod.infeasible ? tocTod.totalDist - tocTod.todNM : -1;
+          if (tocTod && !tocTod.infeasible && todS2 > prevCum && todS2 <= cumDistAcc) {
+            var todETE = legCumETE[i] != null ? legCumETE[i] : null;
+            var todLegNM = todS2 - prevCum;
+            rowsHtml += dataRow(
+              leg.tc, wk, cruiseFt2, todS2, todLegNM,
+              todETE, fuel2,
+              "background:#eff6ff;border-top:2px solid #1d4ed8;border-bottom:2px solid #1d4ed8",
+              "<td style='" + S + "font-size:12px;font-weight:bold;padding:6px 5px;border:1px solid #ccc;color:#1d4ed8;text-align:center'>TOD</td>",
+              "<td style='" + S + "font-size:9px;padding:6px 5px;border:1px solid #ccc;color:#1d4ed8;text-align:left'>Top of Descent</td>"
+            );
+          }
+
+          // ── Normal waypoint row ──
+          var altDisp = "—";
+          if (tocTod && !tocTod.infeasible && cruiseFt2) {
+            if (cumDistAcc <= tocTod.tocNM) altDisp = "↑" + Math.round(wpAlt2);
+            else if (cumDistAcc > (tocTod.totalDist - tocTod.todNM)) altDisp = "↓" + (destElev2 || 0);
+            else altDisp = String(cruiseAlt);
+          }
+          var isAuto = wp._autoId != null;
+          var rowBg = i % 2 === 0 ? "#ffffff" : "#f7f7f7";
+          rowsHtml += dataRow(
+            leg.tc, wk, wpAlt2, cumDistAcc, parseFloat(leg.dist),
+            ete2, fuel2,
+            "background:" + rowBg,
+            "<td style='" + S + "font-size:12px;font-weight:bold;padding:6px 5px;border:1px solid #444;color:" + (isAuto ? "#d8b4fe" : "#fff") + ";text-align:center'>" + (wpNames[wk] || wp.id) + "</td>",
+            "<td style='" + S + "font-size:9px;padding:6px 5px;border:1px solid #ccc;color:#555;text-align:left'>" + (wp.type === "custom" ? (wpNames[wk] || "Custom Fix") : (wp.name ? wp.name.slice(0,22) : "—")) + "</td>"
+          );
+          // override altDisp in last cell — we need a separate pass; patch ALT FT after dataRow
+          // Actually altDisp is already handled via wpAlt2 in tdB(Math.round(altFt)) which rounds correctly
+          // For climb/descent labeling we re-patch:
+          if (tocTod && !tocTod.infeasible && cruiseFt2) {
+            var tag = cumDistAcc <= tocTod.tocNM ? "&#8593;" : cumDistAcc > (tocTod.totalDist - tocTod.todNM) ? "&#8595;" : "";
+            if (tag) {
+              rowsHtml = rowsHtml.replace(/<\/tr>$/, ""); // strip last </tr>
+              // already included in row, no easy patch — just accept numeric alt display
+              rowsHtml += "</tr>";
+            }
+          }
+        });
+
+        // Totals row
+        var lastETE = legCumETE[legCumETE.length-1], lastFuel = legCumFuel[legCumFuel.length-1];
+        rowsHtml += "<tr style='background:#e0e0e0;border-top:2px solid #999'>";
+        rowsHtml += "<td colspan='2' style='" + S + "font-size:10px;font-weight:bold;letter-spacing:3px;color:#444;padding:8px 5px;border:1px solid #ccc;text-align:left'>TOTALS</td>";
+        for (var d2 = 0; d2 < 8; d2++) rowsHtml += tdDim("");
+        rowsHtml += tdB(totalDist.toFixed(1)) + td(totalDist.toFixed(1),"color:#555") + tdDim("") + tdB(lastETE != null ? fmtETE(lastETE) : "—") + tdB(lastFuel != null ? lastFuel.toFixed(1) + " gal" : "—") + tdDim("");
+        rowsHtml += "</tr>";
+
+        var html = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>AeroCalc Navlog</title><style>" +
+          "body{background:#fff;margin:0;padding:16px;color:#111;} " +
+          "@page{size:landscape;margin:8mm;} " +
+          "table{width:100%;border-collapse:collapse;} td,th{border:1px solid #bbb !important;} " +
+          "@media print{body{padding:0;}}" +
+          "</style></head><body>" +
+          "<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #ccc'>" +
+            "<div>" +
+              "<div style='font-size:20px;font-weight:bold;letter-spacing:5px;color:#166534;font-family:Courier New,monospace'>AEROCALC · NAVLOG</div>" +
+              "<div style='font-size:11px;color:#555;letter-spacing:3px;margin-top:3px;font-family:Courier New,monospace'>PA-28-181 ARCHER III</div>" +
+            "</div>" +
+            "<div style='text-align:right;font-family:Courier New,monospace'>" +
+              "<div style='font-size:16px;font-weight:bold;color:#111;letter-spacing:2px'>" + dep.id + " → " + dest.id + "</div>" +
+              "<div style='font-size:11px;color:#444;margin-top:3px'>ETD: " + depDate + "</div>" +
+              "<div style='font-size:11px;color:#1d4ed8;margin-top:2px'>CRUISE: " + (cruiseAlt || "—") + " FT · " + cruisePower + "% PWR</div>" +
+              "<div style='font-size:9px;color:#555;margin-top:5px;letter-spacing:1px'><span style='background:#d4f5a0;color:#1a4a00;border:2px solid #2a7a00;padding:1px 5px;font-weight:bold'>MH</span> = Magnetic Heading to fly</div>" +
+            "</div>" +
+          "</div>" +
+          "<table><thead>" + headerHtml + "</thead><tbody>" + rowsHtml + "</tbody></table>" +
+          "<div style='margin-top:10px;font-size:8px;color:#888;letter-spacing:1px;font-family:Courier New,monospace'>Generated by AeroCalc · aerocalc.org · FOR REFERENCE ONLY — Verify all data with official POH before flight</div>" +
+          "</body></html>";
+
+        var w = window.open("", "_blank", "width=1200,height=750");
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        setTimeout(function() { w.print(); }, 400);
+      };
+
+      const runAltAdvisor = async () => {
+        setShowAltAdvisor(true);
+        if (waypoints.length < 2) return;
+        setAltAdvisorLoading(true);
+        setAltAdvisorData(null);
+
+        var dep = waypoints[0], dest = waypoints[waypoints.length - 1];
+        var midIdx = Math.floor(waypoints.length / 2);
+        var mid = waypoints[midIdx];
+        var targetTime = new Date(depTime);
+        var totalNM = 0;
+        for (var i = 0; i < waypoints.length - 1; i++) totalNM += calcDist(waypoints[i], waypoints[i+1]);
+
+        // Average TC of entire route
+        var avgTC = parseFloat(calcHeading(dep, dest));
+
+        // VFR hemispherical rule: eastbound (0-179) odd thousands + 500, westbound even + 500
+        var isEastbound = avgTC >= 0 && avgTC < 180;
+        var candidates = [];
+        for (var alt = 1000; alt <= 17500; alt += 500) {
+          var thousands = Math.floor(alt / 1000);
+          var isOdd = thousands % 2 === 1;
+          if (isEastbound && isOdd) candidates.push(alt);
+          if (!isEastbound && !isOdd) candidates.push(alt);
+        }
+
+        // Fetch all pressure levels for dep, mid, dest in parallel
+        var HOURLY = "wind_speed_1000hPa,wind_direction_1000hPa,temperature_1000hPa,wind_speed_850hPa,wind_direction_850hPa,temperature_850hPa,wind_speed_700hPa,wind_direction_700hPa,temperature_700hPa,wind_speed_500hPa,wind_direction_500hPa,temperature_500hPa";
+        var pts = [dep, mid, dest];
+        var fetched = await Promise.all(pts.map(function(pt) {
+          return fetch("https://metar-proxy.mamillh01.workers.dev/?type=openmeteo&lat=" + pt.lat + "&lon=" + pt.lon + "&hourly=" + HOURLY)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              if (!data.hourly) return null;
+              var times = data.hourly.time;
+              var best = 0, bestDiff = Infinity;
+              for (var t = 0; t < times.length; t++) {
+                var diff = Math.abs(new Date(times[t] + ":00Z") - targetTime);
+                if (diff < bestDiff) { bestDiff = diff; best = t; }
+              }
+              return { hourly: data.hourly, best: best };
+            }).catch(function() { return null; });
+        }));
+
+        var results = candidates.map(function(alt) {
+          var vars = altToPressureVars(alt);
+          // Average wind across dep, mid, dest
+          var wspdSum = 0, wdirXSum = 0, wdirYSum = 0, tempSum = 0, count = 0;
+          fetched.forEach(function(f) {
+            if (!f) return;
+            var wspd = f.hourly[vars.wspd][f.best];
+            var wdir = f.hourly[vars.wdir][f.best];
+            var temp = f.hourly[vars.temp][f.best];
+            wspdSum += wspd;
+            wdirXSum += Math.cos(wdir * Math.PI / 180);
+            wdirYSum += Math.sin(wdir * Math.PI / 180);
+            tempSum += temp;
+            count++;
+          });
+          if (count === 0) return null;
+          var avgWspd = wspdSum / count;
+          var avgWdir = (Math.atan2(wdirYSum / count, wdirXSum / count) * 180 / Math.PI + 360) % 360;
+          var avgOAT = tempSum / count;
+
+          // TAS at this altitude
+          var cfg = cruiseConfigs[cruisePower];
+          var tas = null;
+          if (cfg && alt <= cfg.maxAlt) {
+            tas = acCruiseTAS(alt, avgOAT, cruisePower);
+          }
+          if (!tas) tas = iasToTAS(122, alt, avgOAT);
+
+          // Wind vectors
+          var wv = calcWindVectors(avgTC, tas, avgWdir, avgWspd, 0);
+          var gs = wv ? wv.gs : tas;
+          if (!gs || gs <= 0) gs = tas;
+
+          // Headwind/tailwind component
+          var windAngleRad = (avgWdir - avgTC) * Math.PI / 180;
+          var hwComponent = Math.round(avgWspd * Math.cos(windAngleRad));
+
+          // ETE and fuel using POH climb/descent data
+          var depElev = dep.elev || 0, destElev = dest.elev || 0;
+          var oatDep = getISATemp(depElev), oatDest = getISATemp(destElev);
+          var climbMin = 0, climbFuel = 0, climbNM = 0;
+          var descentMin = 0, descentFuel = 0, descentNM = 0;
+          try { var cl = acClimb(depElev, alt, oatDep, avgOAT); climbMin = cl.timeMin; climbFuel = cl.fuelGal; climbNM = cl.distNM; } catch(e) {}
+          try { var ds = acDescent(alt, destElev, avgOAT, oatDest); descentMin = ds.timeMin; descentFuel = ds.fuelGal; descentNM = ds.distNM; } catch(e) {}
+          var cruiseDist = Math.max(0, totalNM - climbNM - descentNM);
+          var gph = acCruiseGPH(alt, avgOAT, cruisePower);
+          var cruiseMin = gs > 0 ? (cruiseDist / gs) * 60 : 0;
+          var totalMin = climbMin + cruiseMin + descentMin;
+          var totalFuel = climbFuel + (cruiseDist / (gs > 0 ? gs : 1)) * gph + descentFuel;
+
+          return { alt, hwComponent, tas: Math.round(tas), gs: Math.round(gs), avgWspd: Math.round(avgWspd), avgWdir: Math.round(avgWdir), oat: Math.round(avgOAT * 10) / 10, totalMin, totalFuel };
+        }).filter(Boolean);
+
+        setAltAdvisorData({ results: results, isEastbound: isEastbound, avgTC: Math.round(avgTC) });
+        setAltAdvisorLoading(false);
+      };
+
+      const fmtETE = (mins) => {
+        if (mins == null || isNaN(mins) || mins < 0) return "—";
+        var h = Math.floor(mins / 60), m = Math.round(mins % 60);
+        return h > 0 ? h + ":" + (m < 10 ? "0" : "") + m : m + "min";
+      };
+      const fmtETA = (cumMins) => {
+        if (cumMins == null || isNaN(cumMins) || !depTime) return "—";
+        var eta = new Date(new Date(depTime).getTime() + cumMins * 60000);
+        return eta.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) + "Z";
+      };
+
+      // Pre-compute GS for each leg (needed for cumulative ETE)
+      var legGS = legs.map(function(leg, i) {
+        var wp = leg.to;
+        var wk = wp.lat.toFixed(4) + "," + wp.lon.toFixed(4);
+        var cumD = legs.slice(0, i+1).reduce(function(s,l) { return s + parseFloat(l.dist); }, 0);
+        var oatC = legTemps[wk] !== undefined ? legTemps[wk] : undefined;
+        var cruiseFt = parseFloat(cruiseAlt) || 0;
+        var dep = waypoints[0], dest = waypoints[waypoints.length-1];
+        var depElev = dep.elev || 0, destElev = dest.elev || 0;
+        var wpAlt = cruiseFt;
+        if (tocTod && !tocTod.infeasible && cruiseFt) {
+          var isB = cumD <= tocTod.tocNM, isA = cumD > (tocTod.totalDist - tocTod.todNM);
+          if (isB) { var t = tocTod.tocNM > 0 ? cumD/tocTod.tocNM : 1; wpAlt = depElev + t*(cruiseFt-depElev); }
+          else if (isA) { var t = tocTod.todNM > 0 ? (cumD-(tocTod.totalDist-tocTod.todNM))/tocTod.todNM : 1; wpAlt = cruiseFt - t*(cruiseFt-destElev); }
+        }
+        var tas = getNavlogTAS(cumD, wpAlt, oatC);
+        var v = legVars[wk];
+        var wv = calcWindVectors(parseFloat(leg.tc), tas, legWindDirs[wk], legWindSpds[wk], v !== undefined ? v : 0);
+        return wv && wv.gs > 0 ? wv.gs : null;
+      });
+
+      // Compute cumulative ETE in minutes for each leg endpoint
+      // Uses POH climb/descent times for TOC/TOD, GS for cruise legs
+      var legCumETE = legs.map(function(leg, i) {
+        if (!tocTod || tocTod.infeasible || !cruiseAlt) {
+          // No profile: just use distance/GS
+          var cumMin = 0;
+          for (var j = 0; j <= i; j++) {
+            var gs = legGS[j];
+            if (!gs) return null;
+            cumMin += (parseFloat(legs[j] ? legs[j].dist : 0) / gs) * 60;
+          }
+          return cumMin;
+        }
+        var tocNM = tocTod.tocNM;
+        var todStartNM = tocTod.totalDist - tocTod.todNM;
+        var climbMin = tocTod.climb.timeMin;
+        var descentMin = tocTod.descent.timeMin;
+        var cumD = legs.slice(0, i+1).reduce(function(s,l) { return s + parseFloat(l.dist); }, 0);
+
+        // Time for cruise segment between TOC and TOD using average cruise GS
+        var cruiseGSValues = [];
+        legs.forEach(function(l, j) {
+          var cd = legs.slice(0, j+1).reduce(function(s,ll) { return s + parseFloat(ll.dist); }, 0);
+          if (cd > tocNM && cd <= todStartNM && legGS[j]) cruiseGSValues.push(legGS[j]);
+        });
+        var fallbackEteGS = getNavlogTAS(tocNM + 1, parseFloat(cruiseAlt)||0, tocTod.oatCruise != null ? tocTod.oatCruise : undefined);
+        var avgCruiseGS = cruiseGSValues.length > 0
+          ? cruiseGSValues.reduce(function(s,g) { return s+g; }, 0) / cruiseGSValues.length
+          : (fallbackEteGS || 100);
+
+        if (cumD <= tocNM) {
+          // Pre-TOC: proportional climb time
+          return climbMin * (cumD / tocNM);
+        } else if (cumD <= todStartNM) {
+          // TOC to this point: climb time + cruise time
+          if (!avgCruiseGS) return null;
+          return climbMin + ((cumD - tocNM) / avgCruiseGS) * 60;
+        } else {
+          // Post-TOD: climb + cruise + proportional descent
+          if (!avgCruiseGS) return null;
+          var cruiseDist = todStartNM - tocNM;
+          var descentFrac = (cumD - todStartNM) / tocTod.todNM;
+          return climbMin + (cruiseDist / avgCruiseGS) * 60 + descentMin * descentFrac;
+        }
+      });
+
+      // Cumulative fuel in gallons per waypoint
+      var cruiseGPH = acCruiseGPH(parseFloat(cruiseAlt)||0, tocTod && tocTod.oatCruise != null ? tocTod.oatCruise : getISATemp(parseFloat(cruiseAlt)||0), cruisePower);
+      var legCumFuel = legs.map(function(leg, i) {
+        var cumD = legs.slice(0, i+1).reduce(function(s,l) { return s + parseFloat(l.dist); }, 0);
+        if (!tocTod || tocTod.infeasible || !cruiseAlt) {
+          // No profile: estimate using cruise GPH and ETE
+          var ete = legCumETE[i];
+          return ete != null ? (ete / 60) * cruiseGPH : null;
+        }
+        var tocNM = tocTod.tocNM;
+        var todStartNM = tocTod.totalDist - tocTod.todNM;
+        var climbFuel = tocTod.climb.fuelGal;
+        var descentFuel = tocTod.descent.fuelGal;
+        // Average cruise GS for cruise time calculation
+        var cruiseGSVals = [];
+        legs.forEach(function(l, j) {
+          var cd = legs.slice(0,j+1).reduce(function(s,x) { return s+parseFloat(x.dist); }, 0);
+          if (cd > tocNM && cd <= todStartNM && legGS[j]) cruiseGSVals.push(legGS[j]);
+        });
+        var fallbackGS = getNavlogTAS(tocNM + 1, parseFloat(cruiseAlt)||0, tocTod.oatCruise != null ? tocTod.oatCruise : undefined);
+        var avgCGS = cruiseGSVals.length > 0 ? cruiseGSVals.reduce(function(s,g){return s+g;},0)/cruiseGSVals.length : (fallbackGS || 100);
+
+        if (cumD <= tocNM) {
+          // Pre-TOC: proportional climb fuel
+          return climbFuel * (cumD / tocNM);
+        } else if (cumD <= todStartNM) {
+          // TOC to this point: climb fuel + cruise fuel
+          if (!avgCGS) return null;
+          var cruiseHrs = (cumD - tocNM) / avgCGS;
+          return climbFuel + cruiseHrs * cruiseGPH;
+        } else {
+          // Post-TOD: climb + cruise + proportional descent
+          if (!avgCGS) return null;
+          var cruiseHrs2 = (todStartNM - tocNM) / avgCGS;
+          var desFrac = (cumD - todStartNM) / tocTod.todNM;
+          return climbFuel + cruiseHrs2 * cruiseGPH + descentFuel * desFrac;
+        }
+      });
+
+      return (
+        <div style={{ width: "100%", maxWidth: "1100px", margin: "0 auto" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <div style={{ fontSize: "18px", letterSpacing: "4px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "700" : "normal" }}>NAVLOG · ROUTE PLANNER</div>
+            <div style={{ fontSize: "10px", color: C.dimmest, letterSpacing: "1px" }}>FAA VFR SECTIONAL · 56-DAY CYCLE</div>
+          </div>
+
+          {/* Route input */}
+          <div style={{ background: C.card, border: C.cardBorder + " solid " + C.border, borderRadius: "4px", padding: "14px", marginBottom: "12px" }}>
+            <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>ROUTE — IDENTIFIERS (AIRPORTS · VORS · WAYPOINTS)</div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <input value={routeInput} onChange={e => setRouteInput(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && resolveRoute()} placeholder="e.g. KLAF RBS KGYY"
+                style={{ flex: 1, background: C.isLight ? "#fff" : C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "10px 12px", color: C.text, fontFamily: mono, fontSize: "16px", letterSpacing: "2px" }} />
+              <button onClick={resolveRoute} disabled={loading} style={{ padding: "10px 20px", background: C.green, border: "none", borderRadius: "3px", color: C.btnText, fontFamily: mono, fontSize: "12px", letterSpacing: "2px", cursor: "pointer", fontWeight: "bold", whiteSpace: "nowrap" }}>
+                {loading ? "..." : "PLOT ROUTE"}
+              </button>
+              {waypoints.length > 0 && <button onClick={() => { setWaypoints([]); setRouteInput(""); setLegAlts({}); setLegRemarks({}); autoCruiseIdRef.current = null; }} style={{ padding: "10px 14px", background: "none", border: C.cardBorder + " solid " + C.border, borderRadius: "3px", color: C.dim, fontFamily: mono, fontSize: "11px", cursor: "pointer" }}>CLEAR</button>}
+              <button onClick={openRouteManager} style={{ padding: "10px 14px", background: "none", border: C.cardBorder + " solid " + C.cool, borderRadius: "3px", color: C.cool, fontFamily: mono, fontSize: "11px", cursor: "pointer", letterSpacing: "1px" }}>
+                {user ? "☁ SAVE / LOAD" : "☁ SAVE / LOAD"}
+              </button>
+            </div>
+            {error && <div style={{ fontSize: "11px", color: C.error, marginTop: "6px", letterSpacing: "1px" }}>{error}</div>}
+            {waypoints.length > 1 && (
+              <div style={{ display: "flex", gap: mobile ? "6px" : "8px", alignItems: "center", marginTop: "10px", paddingTop: "10px", borderTop: C.cardBorder + " solid " + C.borderDim, flexWrap: "wrap" }}>
+                {isStandalone && (
+                  <div style={{ position: "relative", marginRight: "4px" }}>
+                    <button onClick={() => setAcDropdownOpen(o => !o)} style={{
+                      display: "flex", alignItems: "center", gap: "6px",
+                      background: "none", border: C.cardBorder + " solid " + C.green,
+                      borderRadius: "3px", padding: "5px 10px", color: C.green,
+                      fontFamily: mono, fontSize: "11px", letterSpacing: "1px", cursor: "pointer", fontWeight: "bold"
+                    }}>
+                      {navlogAircraft === "archer" ? "PA-28" : "C172S"}
+                      <span style={{ fontSize: "8px", opacity: 0.7 }}>▼</span>
+                    </button>
+                    {acDropdownOpen && (
+                      <div style={{
+                        position: "absolute", top: "calc(100% + 4px)", left: 0,
+                        background: C.card, border: C.cardBorder + " solid " + C.border,
+                        borderRadius: "4px", zIndex: 1000, minWidth: "170px",
+                        boxShadow: "0 4px 16px rgba(0,0,0,0.4)"
+                      }}>
+                        {[{id:"archer",label:"PA-28 ARCHER III"},{id:"c172",label:"C172S NAV III"}].map(function(ac) {
+                          return React.createElement("button", {
+                            key: ac.id,
+                            onClick: function() { setNavlogAircraft(ac.id); setAcDropdownOpen(false); },
+                            style: {
+                              display: "block", width: "100%", textAlign: "left",
+                              padding: "10px 14px",
+                              background: navlogAircraft === ac.id ? (C.isLight ? "rgba(74,222,128,0.15)" : "rgba(74,222,128,0.1)") : "none",
+                              border: "none", borderBottom: C.cardBorder + " solid " + C.borderDim,
+                              color: navlogAircraft === ac.id ? C.green : C.text,
+                              fontFamily: mono, fontSize: "11px", letterSpacing: "1px",
+                              cursor: "pointer", fontWeight: navlogAircraft === ac.id ? "bold" : "normal"
+                            }
+                          }, ac.label);
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", whiteSpace: "nowrap" }}>CRUISE ALT</div>
+                  <button onClick={function() { runAltAdvisor(); }} style={{
+                    minWidth: "110px", padding: "6px 12px", fontFamily: mono, fontSize: "13px", cursor: "pointer",
+                    background: cruiseAlt ? (C.isLight ? "rgba(74,222,128,0.1)" : "rgba(74,222,128,0.08)") : "none",
+                    border: C.cardBorder + " solid " + (cruiseAlt && cruisePower && parseFloat(cruiseAlt) > acMaxCruiseAlt(cruisePower) ? "#ef4444" : cruiseAlt ? C.green : C.border),
+                    borderRadius: "3px", color: cruiseAlt ? C.green : C.dim, fontWeight: cruiseAlt ? "bold" : "normal",
+                    letterSpacing: "1px", textAlign: "left",
+                  }}>
+                    {cruiseAlt ? cruiseAlt + " FT" : "SELECT ALT ↑"}
+                  </button>
+                  {cruiseAlt && cruisePower && parseFloat(cruiseAlt) > acMaxCruiseAlt(cruisePower) &&
+                    <div style={{ fontSize: "10px", color: "#ef4444", fontFamily: mono, whiteSpace: "nowrap" }}>{"⚠"} exceeds chart max ({acMaxCruiseAlt(cruisePower).toLocaleString()} ft)</div>
+                  }
+                </div>
+                <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", whiteSpace: "nowrap" }}>{acType === "c172" ? "RPM" : "POWER"}</div>
+                  {(acType === "c172" ? C172_RPMS : ["55", "65", "75"]).map(function(p) {
+                    return React.createElement("button", { key: p, onClick: function() { setCruisePower(p); }, style: {
+                      padding: "5px 10px", fontFamily: mono, fontSize: "12px", cursor: "pointer",
+                      border: C.cardBorder + " solid " + (cruisePower === p ? C.green : C.border),
+                      borderRadius: "3px",
+                      background: cruisePower === p ? (C.isLight ? "rgba(74,222,128,0.15)" : "rgba(74,222,128,0.1)") : "none",
+                      color: cruisePower === p ? C.green : C.dim,
+                      fontWeight: cruisePower === p ? "bold" : "normal",
+                    }}, acType === "c172" ? p : p + "%");
+                  })}
+                </div>
+                <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", whiteSpace: "nowrap" }}>DEP TIME</div>
+                  <input type="datetime-local" value={depTime} onChange={e => setDepTime(e.target.value)}
+                    style={{ background: C.isLight ? "#fff" : C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "6px 8px", color: C.text, fontFamily: mono, fontSize: mobile ? "11px" : "13px", maxWidth: mobile ? "160px" : "none" }} />
+                </div>
+                {weatherLoading && <div style={{ fontSize: "11px", color: C.dimmest, letterSpacing: "1px" }}>⛅ fetching winds…</div>}
+                {waypoints.length >= 2 && legs.length > 0 && (
+                  <button onClick={printNavlog} style={{ padding: "5px 12px", background: "none", border: C.cardBorder + " solid " + C.borderDim, borderRadius: "3px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "1px", cursor: "pointer" }}>
+                    ⎙ PRINT
+                  </button>
+                )}
+                {weatherError && <div style={{ fontSize: "11px", color: C.error, letterSpacing: "1px" }}>{weatherError}</div>}
+                {tocTod && tocTod.infeasible && <div style={{ fontSize: "11px", color: C.error, letterSpacing: "1px" }}>Route too short — TOC+TOD ({(tocTod.tocNM + tocTod.todNM).toFixed(0)} NM) exceeds total ({tocTod.totalDist.toFixed(0)} NM)</div>}
+                {tocTod && !tocTod.infeasible && tocTod.oatCruise === null && (
+                  <div style={{ fontSize: "11px", color: C.error, letterSpacing: "1px", marginTop: "2px" }}>ISA temps — fetch weather first</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Navlog table */}
+          {legs.length > 0 && (
+            <div style={{ background: C.card, border: C.cardBorder + " solid " + C.border, borderRadius: "4px", marginBottom: "12px", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+            {mobile && <div style={{ fontSize: "9px", color: C.dimmest, padding: "4px 8px", letterSpacing: "1px", textAlign: "right" }}>← scroll →</div>}
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "860px" }}>
+                <thead>
+                  {/* Row 1 - group headers */}
+                  <tr>
+                    <th colSpan="1" style={{ ...hdr1, borderRight: C.cardBorder + " solid " + C.border }}>CHECKPOINT</th>
+                    <th style={{ ...hdr1, borderRight: C.cardBorder + " solid " + C.borderDim }}>ALT</th>
+                    <th colSpan="2" style={{ ...hdr1, borderRight: C.cardBorder + " solid " + C.border, color: C.isLight ? "#6b7280" : C.borderDim }}>WIND</th>
+                    <th style={{ ...hdr1, borderRight: C.cardBorder + " solid " + C.borderDim }}>TAS</th>
+                    <th style={{ ...hdr1, borderRight: C.cardBorder + " solid " + C.borderDim }}>TC</th>
+                    <th colSpan="3" style={{ ...hdr1, borderRight: C.cardBorder + " solid " + C.border, color: C.isLight ? "#6b7280" : C.borderDim }}>CORRECTION</th>
+                    <th colSpan="2" style={{ ...hdr1, borderRight: C.cardBorder + " solid " + C.border }}>DIST</th>
+                    <th style={{ ...hdr1, borderRight: C.cardBorder + " solid " + C.borderDim, color: C.isLight ? "#6b7280" : C.borderDim }}>GS</th>
+                    <th colSpan="2" style={{ ...hdr1, borderRight: C.cardBorder + " solid " + C.border, color: C.isLight ? "#6b7280" : C.borderDim }}>TIME</th>
+                    <th style={{ ...hdr1, borderLeft: C.cardBorder + " solid " + C.border }}>FUEL</th>
+                    <th style={{ ...hdr1 }}>TEMP</th>
+                  </tr>
+                  {/* Row 2 - column labels */}
+                  <tr>
+                    <th style={{ ...hdr2, width: "140px", borderRight: C.cardBorder + " solid " + C.border }}>IDENT / NAME</th>
+                    <th style={{ ...hdr2, width: "65px", borderRight: C.cardBorder + " solid " + C.border }}>FT MSL</th>
+                    <th style={{ ...hdr2, width: "45px", borderRight: C.cardBorder + " solid " + C.borderDim, color: C.isLight ? "#6b7280" : C.borderDim }}>DIR</th>
+                    <th style={{ ...hdr2, width: "45px", borderRight: C.cardBorder + " solid " + C.border, color: C.isLight ? "#6b7280" : C.borderDim }}>KT</th>
+                    <th style={{ ...hdr2, width: "45px", borderRight: C.cardBorder + " solid " + C.border }}>KT</th>
+                    <th style={{ ...hdr2, width: "45px", borderRight: C.cardBorder + " solid " + C.border }}>°</th>
+                    <th style={{ ...hdr2, width: "45px", borderRight: C.cardBorder + " solid " + C.borderDim, color: C.isLight ? "#6b7280" : C.borderDim }}>WCA</th>
+                    <th style={{ ...hdr2, width: "45px", borderRight: C.cardBorder + " solid " + C.borderDim, color: C.isLight ? "#6b7280" : C.borderDim }}>VAR</th>
+                    <th style={{ ...hdr2, width: "52px", borderRight: C.cardBorder + " solid " + C.border, color: gCol, borderBottom: "2px solid " + gCol }}>MH</th>
+                    <th style={{ ...hdr2, width: "55px", borderRight: C.cardBorder + " solid " + C.borderDim }}>LEG</th>
+                    <th style={{ ...hdr2, width: "55px", borderRight: C.cardBorder + " solid " + C.border }}>CUM</th>
+                    <th style={{ ...hdr2, width: "45px", borderRight: C.cardBorder + " solid " + C.border, color: C.isLight ? "#6b7280" : C.borderDim }}>KT</th>
+                    <th style={{ ...hdr2, width: "55px", borderRight: C.cardBorder + " solid " + C.borderDim, color: C.isLight ? "#6b7280" : C.borderDim }}>ETE</th>
+                    <th style={{ ...hdr2, width: "55px", borderRight: C.cardBorder + " solid " + C.border, color: C.isLight ? "#6b7280" : C.borderDim }}>ETA</th>
+                    <th style={{ ...hdr2, width: "60px", borderLeft: C.cardBorder + " solid " + C.border }}>CUM GAL</th>
+                    <th style={{ ...hdr2, width: "55px" }}>°C</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Departure row - no leg data */}
+                  {waypoints.length > 0 && (() => {
+                    var dep = waypoints[0];
+                    var dk = dep.lat.toFixed(4) + "," + dep.lon.toFixed(4);
+                    return (
+                      <tr style={{ background: "transparent" }}>
+                        <td style={{ ...cell, fontWeight: "bold", color: C.isLight ? C.text : C.green, borderRight: C.cardBorder + " solid " + C.border, textAlign: "left", paddingLeft: "6px" }}>{dep.id}{dep.name ? <span style={{ fontWeight: "normal", color: C.dim, fontSize: "10px", marginLeft: "5px" }}>{dep.name.length > 14 ? dep.name.slice(0,14) + "…" : dep.name}</span> : null}</td>
+                        <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: C.dim }}>
+                          {dep.elev != null ? dep.elev : "—"}
+                        </td>
+                        {[...Array(12)].map(function(_, j) { return <td key={j} style={{ ...future, borderRight: C.cardBorder + " solid " + (j === 2 || j === 4 || j === 6 || j === 8 || j === 10 ? C.border : C.borderDim) }}>—</td>; })}
+                        <td style={{ ...cell, borderLeft: C.cardBorder + " solid " + C.border }}>—</td>
+                        <td style={{ ...cell, color: C.borderDim }}>—</td>
+                      </tr>
+                    );
+                  })()}
+                  {/* One row per waypoint, showing leg data arriving at it */}
+                  {legs.map(function(leg, i) {
+                    var cumDist = legs.slice(0, i+1).reduce(function(s,l) { return s + parseFloat(l.dist); }, 0);
+                    var prevCumDist = legs.slice(0, i).reduce(function(s,l) { return s + parseFloat(l.dist); }, 0);
+                    var wp = leg.to;
+                    var wk = wp.lat.toFixed(4) + "," + wp.lon.toFixed(4);
+                    var fk = leg.from.lat.toFixed(4) + "," + leg.from.lon.toFixed(4);
+                    var v = legVars[wk];
+                    var rowBg = (i+1) % 2 === 0 ? "transparent" : (C.isLight ? "rgba(0,0,0,0.035)" : "rgba(255,255,255,0.018)");
+
+                    // Check if TOC or TOD falls within this leg
+                    var specialRows = [];
+                    if (tocTod && !tocTod.infeasible) {
+                      var tocDist = tocTod.tocNM;
+                      var todDist = tocTod.totalDist - tocTod.todNM;
+                      if (tocDist > prevCumDist && tocDist <= cumDist) {
+                        var tocDistIntoLeg = tocDist - prevCumDist;
+                        specialRows.push(
+                          <tr key={"toc-" + i} style={{ background: C.isLight ? "rgba(74,222,128,0.08)" : "rgba(74,222,128,0.06)", borderTop: "1px dashed " + C.green, borderBottom: "1px dashed " + C.green }}>
+                            <td style={{ ...cell, fontWeight: "bold", color: C.green, fontSize: "10px", letterSpacing: "2px", borderRight: C.cardBorder + " solid " + C.border, textAlign: "left", paddingLeft: "6px" }}>TOC <span style={{ fontWeight: "normal", opacity: 0.7 }}>Top of Climb</span></td>
+                            <td style={{ ...cell, color: C.green, borderRight: C.cardBorder + " solid " + C.border }}>{cruiseAlt}</td>
+                            <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim, color: tocTodWx.tocWx ? C.text : dash }}>{tocTodWx.tocWx ? tocTodWx.tocWx.wdir + "°" : "—"}</td>
+                            <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: tocTodWx.tocWx ? C.text : dash }}>{tocTodWx.tocWx ? tocTodWx.tocWx.wspd + "kt" : "—"}</td>
+                            {(() => {
+                              var tocTas = getNavlogTAS(tocTod.tocNM, parseFloat(cruiseAlt)||0, tocTodWx.tocWx ? tocTodWx.tocWx.temp : undefined);
+                              var tocWV = tocTod.tocTC && tocTas ? calcWindVectors(parseFloat(tocTod.tocTC), tocTas, tocTodWx.tocWx ? tocTodWx.tocWx.wdir : undefined, tocTodWx.tocWx ? tocTodWx.tocWx.wspd : undefined, tocTodWx.tocVar || 0) : null;
+                              return (
+                                <React.Fragment>
+                                  <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: C.isLight ? "#6d28d9" : "#a78bfa" }}>{tocTas ? tocTas + "kt" : "—"}</td>
+                                  <td style={{ ...cell, fontWeight: "bold", color: C.green, borderRight: C.cardBorder + " solid " + C.border }}>{tocTod.tocTC ? tocTod.tocTC + "°" : "—"}</td>
+                                  <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim, color: tocWV ? C.text : dash }}>{tocWV ? (tocWV.wca > 0 ? "R" : tocWV.wca < 0 ? "L" : "") + Math.abs(tocWV.wca) + "°" : "—"}</td>
+                                  <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim, color: tocTodWx.tocVar !== undefined && tocTodWx.tocVar !== null ? tCol : dash }}>{tocTodWx.tocVar !== undefined && tocTodWx.tocVar !== null ? (tocTodWx.tocVar > 0 ? "E" : "W") + Math.abs(tocTodWx.tocVar) + "°" : "—"}</td>
+                                  <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, fontWeight: "bold", fontSize: "13px", color: tocWV ? gCol : dash, letterSpacing: "0.5px" }}>{tocWV ? tocWV.mh + "°" : "—"}</td>
+                                  <td style={{ ...cell, color: gCol, borderRight: C.cardBorder + " solid " + C.borderDim }}>{tocDistIntoLeg.toFixed(1)}</td>
+                                  <td style={{ ...cell, color: gCol, borderRight: C.cardBorder + " solid " + C.border }}>{tocDist.toFixed(1)}</td>
+                                  <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: tocWV && tocWV.gs ? C.text : dash }}>{tocWV && tocWV.gs ? tocWV.gs + "kt" : "—"}</td>
+                                </React.Fragment>
+                              );
+                            })()}
+                            <td style={{ ...cell, color: gCol, borderRight: C.cardBorder + " solid " + C.borderDim }}>{fmtETE(tocTod.climb.timeMin)}</td>
+                            <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: tCol }}>{fmtETA(tocTod.climb.timeMin)}</td>
+                            <td style={{ ...cell, borderLeft: C.cardBorder + " solid " + C.border, color: C.text }}>{tocTod.climb.fuelGal.toFixed(1)}</td>
+                            <td style={{ ...cell, color: tocTodWx.tocWx ? tCol : dash }}>{tocTodWx.tocWx ? tocTodWx.tocWx.temp + "°C" : "—"}</td>
+                          </tr>
+                        );
+                      }
+                      if (todDist > prevCumDist && todDist <= cumDist) {
+                        var todDistIntoLeg = todDist - prevCumDist;
+                        var avgCruiseGSForTOD = 0;
+                        var cruiseGSCount = 0;
+                        legs.forEach(function(ll, jj) {
+                          var cd = legs.slice(0, jj+1).reduce(function(s,x) { return s + parseFloat(x.dist); }, 0);
+                          if (cd > tocTod.tocNM && cd <= (tocTod.totalDist - tocTod.todNM) && legGS[jj]) {
+                            avgCruiseGSForTOD += legGS[jj]; cruiseGSCount++;
+                          }
+                        });
+                        avgCruiseGSForTOD = cruiseGSCount > 0 ? avgCruiseGSForTOD / cruiseGSCount : (getNavlogTAS(tocTod.tocNM + 1, parseFloat(cruiseAlt)||0, tocTod.oatCruise != null ? tocTod.oatCruise : undefined) || 100);
+                        specialRows.push(
+                          <tr key={"tod-" + i} style={{ background: C.isLight ? "rgba(96,165,250,0.08)" : "rgba(96,165,250,0.06)", borderTop: "1px dashed " + tCol, borderBottom: "1px dashed " + tCol }}>
+                            <td style={{ ...cell, fontWeight: "bold", color: tCol, fontSize: "10px", letterSpacing: "2px", borderRight: C.cardBorder + " solid " + C.border, textAlign: "left", paddingLeft: "6px" }}>TOD <span style={{ fontWeight: "normal", opacity: 0.7 }}>Top of Descent</span></td>
+                            <td style={{ ...cell, color: tCol, borderRight: C.cardBorder + " solid " + C.border }}>{cruiseAlt}</td>
+                            <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim, color: tocTodWx.todWx ? C.text : dash }}>{tocTodWx.todWx ? tocTodWx.todWx.wdir + "°" : "—"}</td>
+                            <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: tocTodWx.todWx ? C.text : dash }}>{tocTodWx.todWx ? tocTodWx.todWx.wspd + "kt" : "—"}</td>
+                            {(() => {
+                              var todTas = iasToTAS(122, parseFloat(cruiseAlt)||0, tocTodWx.todWx ? tocTodWx.todWx.temp : getISATemp(parseFloat(cruiseAlt)||0));
+                              var todWV = tocTod.todTC && todTas ? calcWindVectors(parseFloat(tocTod.todTC), todTas, tocTodWx.todWx ? tocTodWx.todWx.wdir : undefined, tocTodWx.todWx ? tocTodWx.todWx.wspd : undefined, tocTodWx.todVar || 0) : null;
+                              return (
+                                <React.Fragment>
+                                  <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: C.isLight ? "#6d28d9" : "#a78bfa" }}>{todTas ? todTas + "kt" : "—"}</td>
+                                  <td style={{ ...cell, fontWeight: "bold", color: tCol, borderRight: C.cardBorder + " solid " + C.border }}>{tocTod.todTC ? tocTod.todTC + "°" : "—"}</td>
+                                  <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim, color: todWV ? C.text : dash }}>{todWV ? (todWV.wca > 0 ? "R" : todWV.wca < 0 ? "L" : "") + Math.abs(todWV.wca) + "°" : "—"}</td>
+                                  <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim, color: tocTodWx.todVar !== undefined && tocTodWx.todVar !== null ? tCol : dash }}>{tocTodWx.todVar !== undefined && tocTodWx.todVar !== null ? (tocTodWx.todVar > 0 ? "E" : "W") + Math.abs(tocTodWx.todVar) + "°" : "—"}</td>
+                                  <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, fontWeight: "bold", fontSize: "13px", color: todWV ? gCol : dash, letterSpacing: "0.5px" }}>{todWV ? todWV.mh + "°" : "—"}</td>
+                                  <td style={{ ...cell, color: tCol, borderRight: C.cardBorder + " solid " + C.borderDim }}>{todDistIntoLeg.toFixed(1)}</td>
+                                  <td style={{ ...cell, color: tCol, borderRight: C.cardBorder + " solid " + C.border }}>{todDist.toFixed(1)}</td>
+                                  <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: todWV && todWV.gs ? C.text : dash }}>{todWV && todWV.gs ? todWV.gs + "kt" : "—"}</td>
+                                </React.Fragment>
+                              );
+                            })()}
+                            <td style={{ ...cell, color: tCol, borderRight: C.cardBorder + " solid " + C.borderDim }}>{fmtETE(tocTod.climb.timeMin + (avgCruiseGSForTOD > 0 ? ((tocTod.totalDist - tocTod.todNM - tocTod.tocNM) / avgCruiseGSForTOD * 60) : 0))}</td>
+                            <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: tCol }}>{fmtETA(tocTod.climb.timeMin + (avgCruiseGSForTOD > 0 ? ((tocTod.totalDist - tocTod.todNM - tocTod.tocNM) / avgCruiseGSForTOD * 60) : 0))}</td>
+                            <td style={{ ...cell, borderLeft: C.cardBorder + " solid " + C.border, color: C.text }}>{(() => { var avgCGS2=[]; legs.forEach(function(l,j){ var cd=legs.slice(0,j+1).reduce(function(s,x){return s+parseFloat(x.dist);},0); if(cd>tocTod.tocNM&&cd<=(tocTod.totalDist-tocTod.todNM)&&legGS[j]) avgCGS2.push(legGS[j]); }); var fbGs=getNavlogTAS(tocTod.tocNM+1,parseFloat(cruiseAlt)||0,tocTod.oatCruise!=null?tocTod.oatCruise:undefined)||100; var acgs=avgCGS2.length>0?avgCGS2.reduce(function(s,g){return s+g;},0)/avgCGS2.length:fbGs; return acgs ? (tocTod.climb.fuelGal + ((tocTod.totalDist-tocTod.todNM-tocTod.tocNM)/acgs)*9.5).toFixed(1) : "—"; })()}</td>
+                            <td style={{ ...cell, color: tocTodWx.todWx ? tCol : dash }}>{tocTodWx.todWx ? tocTodWx.todWx.temp + "°C" : "—"}</td>
+                          </tr>
+                        );
+                      }
+                    }
+                    return (
+                      <React.Fragment key={wk}>
+                        {specialRows}
+                      <tr key={wk} style={{ background: rowBg }}>
+                        <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, textAlign: "left", paddingLeft: "6px" }}>
+                          {wp.type === "custom"
+                            ? <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                <input type="text" value={wpNames[wk] !== undefined ? wpNames[wk] : ""} onChange={e => setWpNames(prev => ({ ...prev, [wk]: e.target.value }))} placeholder={wk} style={{ width: "110px", background: C.isLight ? "#fff" : C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "2px", padding: "3px 5px", color: C.text, fontFamily: mono, fontSize: "11px" }} />
+                                <button onClick={() => setWaypoints(function(prev) { return prev.filter(function(w) { return (w.lat.toFixed(4) + "," + w.lon.toFixed(4)) !== wk; }); })} style={{ background: "none", border: "none", color: C.borderDim, cursor: "pointer", fontSize: "16px", lineHeight: 1, padding: "0 2px", fontFamily: mono }} title="Delete waypoint">×</button>
+                              </div>
+                            : <span style={{ fontWeight: "bold", letterSpacing: "1px" }}>{wp.id}{wp.name ? <span style={{ fontWeight: "normal", color: C.dim, fontSize: "10px", marginLeft: "5px" }}>{wp.name.length > 14 ? wp.name.slice(0,14) + "…" : wp.name}</span> : null}</span>
+                          }
+                        </td>
+                        <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border }}>
+                          {(() => {
+                            if (!tocTod || tocTod.infeasible || !cruiseAlt) return <span style={{ color: C.dimmest }}>—</span>;
+                            var cruiseFt = parseFloat(cruiseAlt);
+                            var dest = waypoints[waypoints.length - 1];
+                            var destElev = dest.elev || 0;
+                            var dep = waypoints[0];
+                            var depElev = dep.elev || 0;
+                            var isAfterTod = cumDist > (tocTod.totalDist - tocTod.todNM);
+                            var isBeforeToc = cumDist <= tocTod.tocNM;
+                            if (isBeforeToc) {
+                              var t = tocTod.tocNM > 0 ? cumDist / tocTod.tocNM : 1;
+                              var interpAlt = Math.round(depElev + t * (cruiseFt - depElev));
+                              return <span style={{ color: C.green, fontSize: "12px" }}>↑ {interpAlt}</span>;
+                            }
+                            if (isAfterTod) return <span style={{ color: C.cool, fontSize: "12px" }}>↓ {destElev}</span>;
+                            return <span style={{ color: C.text }}>{cruiseAlt}</span>;
+                          })()}
+                        </td>
+                        <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim, color: legWindDirs[wk] !== undefined ? C.text : dash }}>{legWindDirs[wk] !== undefined ? legWindDirs[wk] + "°" : "—"}</td>
+                        <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: legWindSpds[wk] !== undefined ? C.text : dash }}>{legWindSpds[wk] !== undefined ? legWindSpds[wk] + "kt" : "—"}</td>
+                        <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: C.isLight ? C.text : "#a78bfa" }}>
+                          {(() => {
+                            var oatC = legTemps[wk] !== undefined ? legTemps[wk] : undefined;
+                            var cruiseFt2 = parseFloat(cruiseAlt) || 0;
+                            var dep2 = waypoints[0], dest2 = waypoints[waypoints.length-1];
+                            var depElev2 = dep2.elev || 0, destElev2 = dest2.elev || 0;
+                            var wpAltFt = cruiseFt2;
+                            if (tocTod && !tocTod.infeasible && cruiseFt2) {
+                              var isBeforeToc2 = cumDist <= tocTod.tocNM;
+                              var isAfterTod2 = cumDist > (tocTod.totalDist - tocTod.todNM);
+                              if (isBeforeToc2) {
+                                var t2 = tocTod.tocNM > 0 ? cumDist / tocTod.tocNM : 1;
+                                wpAltFt = depElev2 + t2 * (cruiseFt2 - depElev2);
+                              } else if (isAfterTod2) {
+                                var t2 = tocTod.todNM > 0 ? (cumDist - (tocTod.totalDist - tocTod.todNM)) / tocTod.todNM : 1;
+                                wpAltFt = cruiseFt2 - t2 * (cruiseFt2 - destElev2);
+                              }
+                            }
+                            var tas = getNavlogTAS(cumDist, wpAltFt, oatC);
+                            return tas ? tas + "kt" : "—";
+                          })()}
+                        </td>
+                        <td style={{ ...cell, fontWeight: "bold", color: C.isLight ? C.text : C.green, borderRight: C.cardBorder + " solid " + C.border }}>{leg.tc}°</td>
+                        {(() => {
+                          var oatC2 = legTemps[wk] !== undefined ? legTemps[wk] : undefined;
+                          var cruiseFt3 = parseFloat(cruiseAlt) || 0;
+                          var dep3 = waypoints[0], dest3 = waypoints[waypoints.length-1];
+                          var depElev3 = dep3.elev || 0, destElev3 = dest3.elev || 0;
+                          var wpAlt3 = cruiseFt3;
+                          if (tocTod && !tocTod.infeasible && cruiseFt3) {
+                            var isB = cumDist <= tocTod.tocNM, isA = cumDist > (tocTod.totalDist - tocTod.todNM);
+                            if (isB) { var t3 = tocTod.tocNM > 0 ? cumDist/tocTod.tocNM : 1; wpAlt3 = depElev3 + t3*(cruiseFt3-depElev3); }
+                            else if (isA) { var t3 = tocTod.todNM > 0 ? (cumDist-(tocTod.totalDist-tocTod.todNM))/tocTod.todNM : 1; wpAlt3 = cruiseFt3 - t3*(cruiseFt3-destElev3); }
+                          }
+                          var tas3 = getNavlogTAS(cumDist, wpAlt3, oatC2);
+                          var wv = calcWindVectors(parseFloat(leg.tc), tas3, legWindDirs[wk], legWindSpds[wk], v !== undefined ? v : 0);
+                          return (
+                            <React.Fragment>
+                              <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim, color: wv ? C.text : dash }}>
+                                {wv ? (wv.wca > 0 ? "R" : wv.wca < 0 ? "L" : "") + Math.abs(wv.wca) + "°" : "—"}
+                              </td>
+                              <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim, color: v !== undefined ? tCol : dash }}>
+                                {v !== undefined ? (v > 0 ? "E" : "W") + Math.abs(v) + "°" : "—"}
+                              </td>
+                              <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, fontWeight: "bold", fontSize: "13px", color: wv ? gCol : dash, letterSpacing: "0.5px" }}>
+                                {wv ? wv.mh + "°" : "—"}
+                              </td>
+                            </React.Fragment>
+                          );
+                        })()}
+                        <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim }}>{leg.dist}</td>
+                        <td style={{ ...cell, color: C.isLight ? C.text : C.dim, borderRight: C.cardBorder + " solid " + C.border }}>{cumDist.toFixed(1)}</td>
+                        {(() => {
+                          var oatC4 = legTemps[wk] !== undefined ? legTemps[wk] : undefined;
+                          var cruiseFt4 = parseFloat(cruiseAlt) || 0;
+                          var dep4 = waypoints[0], dest4 = waypoints[waypoints.length-1];
+                          var depElev4 = dep4.elev || 0, destElev4 = dest4.elev || 0;
+                          var wpAlt4 = cruiseFt4;
+                          if (tocTod && !tocTod.infeasible && cruiseFt4) {
+                            var isB4 = cumDist <= tocTod.tocNM, isA4 = cumDist > (tocTod.totalDist - tocTod.todNM);
+                            if (isB4) { var t4 = tocTod.tocNM > 0 ? cumDist/tocTod.tocNM : 1; wpAlt4 = depElev4 + t4*(cruiseFt4-depElev4); }
+                            else if (isA4) { var t4 = tocTod.todNM > 0 ? (cumDist-(tocTod.totalDist-tocTod.todNM))/tocTod.todNM : 1; wpAlt4 = cruiseFt4 - t4*(cruiseFt4-destElev4); }
+                          }
+                          var tas4 = getNavlogTAS(cumDist, wpAlt4, oatC4);
+                          var wv4 = calcWindVectors(parseFloat(leg.tc), tas4, legWindDirs[wk], legWindSpds[wk], v !== undefined ? v : 0);
+                          return (
+                            <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: wv4 && wv4.gs ? C.text : dash }}>
+                              {wv4 && wv4.gs ? wv4.gs + "kt" : "—"}
+                            </td>
+                          );
+                        })()}
+                        <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim, color: legCumETE[i] != null ? C.text : dash }}>
+                          {fmtETE(legCumETE[i])}
+                        </td>
+                        <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: legCumETE[i] != null ? tCol : dash }}>
+                          {fmtETA(legCumETE[i])}
+                        </td>
+                        <td style={{ ...cell, borderLeft: C.cardBorder + " solid " + C.border, color: legCumFuel[i] != null ? C.text : dash }}>
+                          {legCumFuel[i] != null ? legCumFuel[i].toFixed(1) : "—"}
+                        </td>
+                        <td style={{ ...cell }}>
+                          <span style={{ color: legTemps[wk] !== undefined ? tCol : dash, fontFamily: mono, fontSize: "12px", fontWeight: C.isLight ? "600" : "normal" }}>{legTemps[wk] !== undefined ? legTemps[wk] + "°C" : "—"}</span>
+                        </td>
+                      </tr>
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Totals summary panel */}
+          {legs.length > 0 && (() => {
+            var lastETE = legCumETE[legCumETE.length-1];
+            var lastFuel = legCumFuel[legCumFuel.length-1];
+            var etaStr = "—";
+            if (depTime && lastETE != null) {
+              var eta = new Date(new Date(depTime).getTime() + lastETE * 60000);
+              etaStr = eta.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) + "Z";
+            }
+            var dep = waypoints[0], dest = waypoints[waypoints.length-1];
+            var items = [
+              { label: "DIST",  value: totalDist.toFixed(1) + " NM",                       color: C.text },
+              { label: "ETE",   value: lastETE != null ? fmtETE(lastETE) : "—",             color: C.text },
+              { label: "ETA",   value: etaStr,                                               color: C.cool },
+              { label: "FUEL",  value: lastFuel != null ? lastFuel.toFixed(1) + " gal" : "—", color: C.text },
+            ];
+            return (
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "0",
+                background: C.card, border: C.cardBorder + " solid " + C.border,
+                borderRadius: "4px", marginBottom: "12px", overflow: "hidden",
+                flexWrap: mobile ? "wrap" : "nowrap",
+              }}>
+<div style={{ padding: "10px 16px", borderRight: mobile ? "none" : C.cardBorder + " solid " + C.border, borderBottom: mobile ? C.cardBorder + " solid " + C.border : "none", fontSize: "10px", color: C.dim, letterSpacing: "1px", whiteSpace: "nowrap", width: mobile ? "100%" : "auto", textAlign: mobile ? "center" : "left" }}>
+                  {dep.id} → {dest.id}
+                </div>
+                {items.map(function(item, idx) {
+                  return React.createElement("div", {
+                    key: item.label,
+                    style: {
+                      flex: 1, padding: "10px 16px", textAlign: "center",
+                      borderRight: idx < items.length - 1 ? C.cardBorder + " solid " + (C.isLight ? C.border : C.borderDim) : "none",
+                    }
+                  },
+                    React.createElement("div", { style: { fontSize: "9px", letterSpacing: "2px", color: C.isLight ? "#6b7280" : C.dimmest, marginBottom: "3px", fontWeight: C.isLight ? "600" : "normal" } }, item.label),
+                    React.createElement("div", { style: { fontSize: "15px", fontWeight: "bold", color: item.color, letterSpacing: "1px" } }, item.value)
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* Map */}
+          <div ref={mapRef} style={{ width: "100%", height: mobile ? "50vh" : "70vh", borderRadius: "4px", border: C.cardBorder + " solid " + C.border, overflow: "hidden" }} />
+          <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "8px", letterSpacing: "1px" }}>
+            Scroll to zoom · Drag to pan · Hover marker for airport name
+          </div>
+
+          {/* Auth modal for unauthenticated users */}
+          {showNavlogAuth && (
+            <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}
+              onClick={function(e) { if (e.target === e.currentTarget) setShowNavlogAuth(false); }}>
+              <div style={{ background: C.card, border: C.cardBorder + " solid " + C.border, borderRadius: "6px", padding: "32px", width: "100%", maxWidth: "360px", textAlign: "center" }}>
+                <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.cool, fontFamily: mono, fontWeight: "bold", marginBottom: "12px" }}>☁ SAVE / LOAD ROUTES</div>
+                <div style={{ fontSize: "12px", color: C.dim, fontFamily: mono, marginBottom: "24px", lineHeight: 1.6 }}>
+                  Sign in to save your routes to the cloud and access them from any device.
+                </div>
+                <button onClick={function() { setShowNavlogAuth(false); if (onShowAuth) onShowAuth(); }}
+                  style={{ padding: "12px 32px", background: C.green, border: "none", borderRadius: "3px", color: C.btnText, fontFamily: mono, fontSize: "13px", letterSpacing: "2px", cursor: "pointer", fontWeight: "bold", width: "100%", marginBottom: "10px" }}>
+                  SIGN IN / CREATE ACCOUNT
+                </button>
+                <button onClick={function() { setShowNavlogAuth(false); }}
+                  style={{ background: "none", border: "none", color: C.dimmest, fontFamily: mono, fontSize: "11px", cursor: "pointer", letterSpacing: "1px" }}>
+                  cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Route Manager Modal */}
+          {showRouteManager && (
+            <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}
+              onClick={function(e) { if (e.target === e.currentTarget) setShowRouteManager(false); }}>
+              <div style={{ background: C.card, border: C.cardBorder + " solid " + C.border, borderRadius: "6px", width: "480px", maxWidth: "95vw", maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+                {/* Header */}
+                <div style={{ padding: "16px 20px", borderBottom: C.cardBorder + " solid " + C.border, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: "14px", letterSpacing: "3px", color: C.cool, fontFamily: mono, fontWeight: "bold" }}>SAVED ROUTES</div>
+                  <button onClick={function() { setShowRouteManager(false); }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer", fontSize: "20px", fontFamily: mono }}>×</button>
+                </div>
+                {/* Save current route */}
+                {waypoints.length >= 2 && (
+                  <div style={{ padding: "14px 20px", borderBottom: C.cardBorder + " solid " + C.border, display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      value={saveRouteName} onChange={function(e) { setSaveRouteName(e.target.value); }}
+                      placeholder={"Route name (e.g. KLAF→KGYY)"}
+                      onKeyDown={function(e) { if (e.key === "Enter") saveRoute(); }}
+                      style={{ flex: 1, background: C.isLight ? "#fff" : C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "8px 10px", color: C.text, fontFamily: mono, fontSize: "13px" }}
+                    />
+                    <button onClick={saveRoute} disabled={!saveRouteName.trim() || saveStatus === "saving"}
+                      style={{ padding: "8px 16px", background: C.green, border: "none", borderRadius: "3px", color: C.btnText, fontFamily: mono, fontSize: "12px", cursor: "pointer", fontWeight: "bold", whiteSpace: "nowrap" }}>
+                      {saveStatus === "saving" ? "…" : saveStatus === "saved" ? "✓ SAVED" : "SAVE"}
+                    </button>
+                  </div>
+                )}
+                {/* Routes list */}
+                <div style={{ overflowY: "auto", flex: 1 }}>
+                  {routesLoading && <div style={{ padding: "40px", textAlign: "center", color: C.dim, fontFamily: mono, fontSize: "12px", letterSpacing: "2px" }}>LOADING…</div>}
+                  {!routesLoading && savedRoutes.length === 0 && (
+                    <div style={{ padding: "40px", textAlign: "center", color: C.dimmest, fontFamily: mono, fontSize: "12px", letterSpacing: "1px" }}>No saved routes yet</div>
+                  )}
+                  {!routesLoading && savedRoutes.map(function(route) {
+                    var d = route.route_data;
+                    var date = new Date(route.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+                    return (
+                      <div key={route.id} style={{ display: "flex", alignItems: "center", padding: "12px 20px", borderBottom: C.cardBorder + " solid " + C.borderDim, gap: "12px" }}
+                        onMouseEnter={function(e) { e.currentTarget.style.background = C.isLight ? "rgba(0,0,0,0.03)" : "rgba(255,255,255,0.03)"; }}
+                        onMouseLeave={function(e) { e.currentTarget.style.background = ""; }}>
+                        <div style={{ flex: 1, cursor: "pointer" }} onClick={function() { loadRoute(route); }}>
+                          <div style={{ fontFamily: mono, fontSize: "13px", fontWeight: "bold", color: C.text, letterSpacing: "1px" }}>{route.name}</div>
+                          <div style={{ fontFamily: mono, fontSize: "10px", color: C.dim, marginTop: "3px", letterSpacing: "1px" }}>
+                            {d.routeInput && <span style={{ marginRight: "10px" }}>{d.routeInput}</span>}
+                            {d.cruiseAlt && <span style={{ marginRight: "10px", color: C.cool }}>{d.cruiseAlt} FT</span>}
+                            {d.cruisePower && <span style={{ marginRight: "10px", color: C.green }}>{d.cruisePower}%</span>}
+                            <span style={{ color: C.dimmest }}>{date}</span>
+                          </div>
+                        </div>
+                        <button onClick={function() { loadRoute(route); }}
+                          style={{ padding: "6px 12px", background: "none", border: C.cardBorder + " solid " + C.cool, borderRadius: "3px", color: C.cool, fontFamily: mono, fontSize: "11px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                          LOAD
+                        </button>
+                        <button onClick={function() { if (window.confirm("Delete \"" + route.name + "\"?")) deleteRoute(route.id); }}
+                          style={{ padding: "6px 10px", background: "none", border: "none", color: C.borderDim, fontFamily: mono, fontSize: "16px", cursor: "pointer", lineHeight: 1 }}>
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ padding: "10px 16px", borderTop: C.cardBorder + " solid " + C.border, fontSize: "10px", color: C.dimmest, fontFamily: mono, letterSpacing: "1px" }}>
+                  ROUTES SAVED TO YOUR ACCOUNT · SIGNED IN AS {user && user.email}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Alt Advisor Modal */}
+          {showAltAdvisor && (
+            <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}
+              onClick={function(e) { if (e.target === e.currentTarget) setShowAltAdvisor(false); }}>
+              <div style={{ background: C.card, border: C.cardBorder + " solid " + C.border, borderRadius: "6px", width: "420px", maxWidth: "95vw", maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <div style={{ padding: "16px 20px", borderBottom: C.cardBorder + " solid " + C.border, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: "14px", letterSpacing: "3px", color: C.green, fontFamily: mono, fontWeight: "bold" }}>ALT ADVISOR</div>
+                    {altAdvisorData && <div style={{ fontSize: "10px", color: C.dim, fontFamily: mono, marginTop: "3px", letterSpacing: "1px" }}>
+                      {altAdvisorData.isEastbound ? "EASTBOUND" : "WESTBOUND"} · AVG TC {altAdvisorData.avgTC}° · {cruisePower}% POWER
+                    </div>}
+                  </div>
+                  <button onClick={function() { setShowAltAdvisor(false); }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer", fontSize: "20px", fontFamily: mono }}>×</button>
+                </div>
+                <div style={{ overflowY: "auto", flex: 1 }}>
+                  {altAdvisorLoading && (
+                    <div style={{ padding: "40px", textAlign: "center", color: C.dim, fontFamily: mono, fontSize: "12px", letterSpacing: "2px" }}>⛅ FETCHING WINDS ALOFT…</div>
+                  )}
+                  {!altAdvisorLoading && altAdvisorData && (
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ background: C.isLight ? "#e8ecf2" : "#0d1420" }}>
+                          <th style={{ padding: "8px 12px", fontSize: "9px", letterSpacing: "1px", color: C.dimmest, fontFamily: mono, textAlign: "left", borderBottom: C.cardBorder + " solid " + C.border }}>ALT</th>
+                          <th style={{ padding: "8px 8px", fontSize: "9px", letterSpacing: "1px", color: C.dimmest, fontFamily: mono, textAlign: "center", borderBottom: C.cardBorder + " solid " + C.border }}>WIND</th>
+                          <th style={{ padding: "8px 8px", fontSize: "9px", letterSpacing: "1px", color: C.dimmest, fontFamily: mono, textAlign: "center", borderBottom: C.cardBorder + " solid " + C.border }}>ETE</th>
+                          <th style={{ padding: "8px 12px", fontSize: "9px", letterSpacing: "1px", color: C.dimmest, fontFamily: mono, textAlign: "center", borderBottom: C.cardBorder + " solid " + C.border }}>FUEL</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {altAdvisorData.results.map(function(row, ri) {
+                          var isCurrent = cruiseAlt && Math.abs(parseFloat(cruiseAlt) - row.alt) < 300;
+                          var tailwind = row.hwComponent < 0;
+                          var calm = Math.abs(row.hwComponent) < 2;
+                          var windColor = calm ? C.dim : tailwind ? C.green : "#ef4444";
+                          var windLabel = calm ? "calm" : (tailwind ? "▲ " : "▼ ") + Math.abs(row.hwComponent) + "kt " + (tailwind ? "tail" : "head");
+                          return (
+                            <tr key={row.alt} onClick={function() { setCruiseAlt(String(row.alt)); setShowAltAdvisor(false); }}
+                              style={{ cursor: "pointer", background: isCurrent ? (C.isLight ? "rgba(74,222,128,0.1)" : "rgba(74,222,128,0.08)") : (ri % 2 === 0 ? "transparent" : (C.isLight ? "rgba(0,0,0,0.018)" : "rgba(255,255,255,0.018)")) }}
+                            >
+                              <td style={{ padding: "11px 12px", fontFamily: mono, fontSize: "13px", fontWeight: "bold", color: isCurrent ? C.green : C.text, borderBottom: C.cardBorder + " solid " + C.borderDim }}>
+                                {row.alt.toLocaleString()}'
+                                {isCurrent && <span style={{ fontSize: "9px", marginLeft: "4px", color: C.green }}>✓</span>}
+                              </td>
+                              <td style={{ padding: "11px 8px", fontFamily: mono, fontSize: "12px", color: windColor, textAlign: "center", borderBottom: C.cardBorder + " solid " + C.borderDim }}>{windLabel}</td>
+                              <td style={{ padding: "11px 8px", fontFamily: mono, fontSize: "12px", color: C.text, textAlign: "center", borderBottom: C.cardBorder + " solid " + C.borderDim }}>{fmtETE(row.totalMin)}</td>
+                              <td style={{ padding: "11px 12px", fontFamily: mono, fontSize: "12px", color: C.text, textAlign: "center", borderBottom: C.cardBorder + " solid " + C.borderDim }}>{row.totalFuel.toFixed(1)}g</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <div style={{ padding: "10px 16px", borderTop: C.cardBorder + " solid " + C.border, fontSize: "10px", color: C.dimmest, fontFamily: mono, letterSpacing: "1px" }}>
+                  TAP ROW TO SELECT · WINDS AVERAGED ALONG ROUTE
+                  <span style={{ marginLeft: "12px" }}>
+                    <input type="number" placeholder="custom ft" onKeyDown={function(e) { if (e.key === "Enter" && e.target.value) { setCruiseAlt(e.target.value); setShowAltAdvisor(false); } }}
+                      style={{ width: "80px", background: C.isLight ? "#fff" : C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "3px 6px", color: C.text, fontFamily: mono, fontSize: "11px" }} />
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     function App({ onBack, theme, toggleTheme, user }) {
       const C = useC();
       const [activeTab, setActiveTab] = useState("wb");
       const [tabStates, setTabStates] = useState({});
+      const [showAppAuth, setShowAppAuth] = useState(false);
       const mobile = useIsMobile();
       function saveTabState(tabId, state) {
       setTabStates(prev => ({ ...prev, [tabId]: state }));
@@ -3888,7 +5871,7 @@
       const tabProps = (id) => ({ savedState: tabStates[id] || {}, onStateChange: (s) => saveTabState(id, s) });
       return (
       <MobileContext.Provider value={mobile}>
-      <div style={{ minHeight: "100vh", background: C.bg, fontFamily: mono, color: C.text, display: "flex", flexDirection: "column", alignItems: "center", padding: mobile ? "16px 12px" : "32px 24px" }}>
+      <div style={{ minHeight: "100vh", background: C.bg, fontFamily: mono, color: C.text, display: "flex", flexDirection: "column", alignItems: "center", padding: mobile ? "12px 8px" : "32px 24px" }}>
       <div style={{ width: "100%", maxWidth: "860px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       {onBack ? (
       <button onClick={onBack} style={{ background: "none", border: `${C.cardBorder} solid ${C.borderDim}`, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>
@@ -3932,6 +5915,14 @@
       </div>
       <div style={{ marginTop: "24px", fontSize: "12px", color: C.dim, letterSpacing: "2px" }}>PA-28-181 ARCHER III · VB-2749 · ISSUED DEC 2017</div>
       </div>
+      {showAppAuth && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}
+          onClick={function() { setShowAppAuth(false); }}>
+          <div onClick={function(e) { e.stopPropagation(); }} style={{ width: "100%", maxWidth: "380px" }}>
+            <AuthScreen theme={theme} toggleTheme={toggleTheme} onAuth={function(u) { setShowAppAuth(false); }} inline={true} />
+          </div>
+        </div>
+      )}
       </MobileContext.Provider>
       );
     }
@@ -5625,8 +7616,8 @@
       const bankLabel = bank === 0 ? "WINGS LEVEL" : bank <= 20 ? "SHALLOW TURN" : bank <= 40 ? "MEDIUM TURN" : bank <= 55 ? "STEEP TURN" : "EXTREME BANK";
       const VA_MAX = 105;
       const weightVal = parseFloat(weight);
-      const va = (!isNaN(weightVal) && weightVal >= 1000 && weightVal <= 2550)
-      ? Math.round(VA_MAX * Math.sqrt(weightVal / 2550))
+      const va = (!isNaN(weightVal) && weightVal >= 2870 && weightVal <= 4570)
+      ? Math.round(VA_MAX * Math.sqrt(weightVal / 4570))
       : null;
       return (
       <Card>
@@ -5634,7 +7625,7 @@
       {/* ── MANEUVERING SPEED ── */}
       <div style={{ marginBottom: "28px" }}>
       <div style={{ fontSize: "13px", letterSpacing: "3px", color: C.isLight ? C.text : C.green, fontWeight: C.isLight ? "600" : "normal", marginBottom: "14px", borderBottom: C.cardBorder + " solid " + C.border, paddingBottom: "8px" }}>MANEUVERING SPEED (Va)</div>
-      <div style={{ fontSize: "12px", color: C.dim, letterSpacing: "1px", marginBottom: "12px" }}>Va = 105 KIAS at 2,550 lb · scales with √(W/2550)</div>
+      <div style={{ fontSize: "12px", color: C.dim, letterSpacing: "1px", marginBottom: "12px" }}>Va = 105 KIAS at 4,570 lb · scales with √(W/4570)</div>
       <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", marginBottom: "12px" }}>
       <div style={{ flex: 1 }}>
       <div style={{ fontSize: "11px", letterSpacing: "2px", color: C.isLight ? C.text : C.dim, fontWeight: C.isLight ? "700" : "normal", marginBottom: "6px" }}>GROSS WEIGHT</div>
@@ -5657,12 +7648,12 @@
       </div>
       ) : (
       <div style={{ background: C.input, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", padding: "16px", textAlign: "center", color: C.dim, fontSize: "12px", letterSpacing: "1px" }}>
-      Enter weight above to calculate Va · Max 2,550 lb
+      Enter weight above to calculate Va · 2,870 – 4,570 lb
       </div>
       )}
-      {va !== null && weightVal < 2550 && (
+      {va !== null && weightVal < 4570 && (
       <div style={{ fontSize: "11px", color: C.dim, marginTop: "6px", letterSpacing: "1px" }}>
-      At max gross (2,550 lb): <strong style={{ color: C.text }}>105 KIAS</strong>
+      At max gross (4,570 lb): <strong style={{ color: C.text }}>105 KIAS</strong>
       </div>
       )}
       </div>
@@ -7940,6 +9931,39 @@ null}
       </Card>
       );
     }
+    function StandaloneNavlog({ onBack, theme, toggleTheme, user }) {
+      const C = useC();
+      const mono = "'Courier New', monospace";
+      const mobile = useIsMobile();
+      const [tabState, setTabState] = React.useState({});
+      const [showAppAuth, setShowAppAuth] = React.useState(false);
+      return (
+      <MobileContext.Provider value={mobile}>
+      <div style={{ minHeight: "100vh", background: C.bg, fontFamily: mono, color: C.text, display: "flex", flexDirection: "column", alignItems: "center", padding: mobile ? "16px 12px" : "32px 24px" }}>
+        <div style={{ width: "100%", maxWidth: "1100px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <button onClick={onBack} style={{ background: "none", border: C.cardBorder + " solid " + C.borderDim, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>← HOME</button>
+          <button onClick={toggleTheme} style={{ background: "none", border: C.cardBorder + " solid " + C.borderDim, borderRadius: "3px", padding: "6px 12px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer" }}>{theme === "dark" ? "☀ LIGHT" : "☾ DARK"}</button>
+        </div>
+        <div style={{ textAlign: "center", marginBottom: mobile ? "16px" : "28px" }}>
+          <div style={{ fontSize: mobile ? "11px" : "16px", letterSpacing: "6px", color: C.green, marginBottom: "6px" }}>AEROCALC · ROUTE PLANNER</div>
+          <div style={{ fontSize: mobile ? "22px" : "36px", fontWeight: "bold", letterSpacing: mobile ? "1px" : "3px" }}>XC NAVLOG</div>
+        </div>
+        <div style={{ width: "100%", maxWidth: "1100px" }}>
+          <NavlogTab savedState={tabState} onStateChange={setTabState} user={user} onShowAuth={() => setShowAppAuth(true)} isStandalone={true} />
+        </div>
+      </div>
+      {showAppAuth && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}
+          onClick={() => setShowAppAuth(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: "380px" }}>
+            <AuthScreen theme={theme} toggleTheme={toggleTheme} onAuth={u => setShowAppAuth(false)} inline={true} />
+          </div>
+        </div>
+      )}
+      </MobileContext.Provider>
+      );
+    }
+
     function SeminoleApp({ onBack, theme, toggleTheme }) {
       const C = useC();
       const mobile = useIsMobile();
@@ -8046,6 +10070,23 @@ null}
       <div style={{ fontSize: mobile ? "28px" : "64px", fontWeight: "bold", letterSpacing: mobile ? "2px" : "6px", color: C.green }}>CALC</div>
       <div style={{ fontSize: mobile ? "12px" : "16px", color: C.dim, marginTop: "16px", letterSpacing: "4px" }}>SELECT AIRCRAFT</div>
       </div>
+      {/* XC Planner full-width button above aircraft */}
+      <div style={{ width: "100%", maxWidth: "1100px", marginBottom: mobile ? "16px" : "24px" }}>
+        <button onClick={() => onSelect("navlog")}
+          style={{ width: "100%", background: C.card, border: C.cardBorder + " solid " + C.border, borderRadius: "8px",
+            padding: mobile ? "20px 24px" : "24px 32px", textAlign: "center", cursor: "pointer", fontFamily: mono, transition: "border-color 0.15s",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "32px" }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = C.green; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; }}>
+          <div style={{ fontSize: mobile ? "22px" : "28px" }}>✈</div>
+          <div>
+            <div style={{ fontSize: mobile ? "16px" : "20px", fontWeight: "bold", letterSpacing: "3px", color: C.text }}>XC ROUTE PLANNER</div>
+            <div style={{ fontSize: "11px", color: C.dim, letterSpacing: "2px", marginTop: "3px" }}>NAVLOG · MAP · WEATHER · WINDS ALOFT · FUEL</div>
+          </div>
+          <span style={{ fontSize: "18px", color: C.green }}>→</span>
+        </button>
+      </div>
+
       <div style={{ display: "flex", flexDirection: mobile ? "column" : "row", flexWrap: "wrap", gap: mobile ? "16px" : "24px", width: "100%", maxWidth: "1100px" }}>
       {aircraft.map(ac => (
       <button key={ac.id} onClick={() => ac.available && onSelect(ac.id)}
@@ -8297,6 +10338,7 @@ null}
       if (!aircraft) return wrapTheme(<AircraftMenu onSelect={setAircraft} theme={theme} toggleTheme={toggleTheme} user={user} onSignOut={async () => { await sbClient.auth.signOut(); setUser(null); }} onSignIn={setUser} />);
       if (aircraft === "c172s") return wrapTheme(<C172App onBack={() => setAircraft(null)} theme={theme} toggleTheme={toggleTheme} user={user} />);
       if (aircraft === "pa44")  return wrapTheme(<SeminoleApp onBack={() => setAircraft(null)} theme={theme} toggleTheme={toggleTheme} user={user} />);
+      if (aircraft === "navlog") return wrapTheme(<StandaloneNavlog onBack={() => setAircraft(null)} theme={theme} toggleTheme={toggleTheme} user={user} />);
       return wrapTheme(<App onBack={() => setAircraft(null)} theme={theme} toggleTheme={toggleTheme} user={user} />);
     }
     ReactDOM.createRoot(document.getElementById("root")).render(<Root />);</script>
