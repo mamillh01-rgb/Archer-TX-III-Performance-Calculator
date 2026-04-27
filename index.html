@@ -4051,6 +4051,14 @@
       const [wpNames, setWpNames] = React.useState(savedState.wpNames || {});
       const [weatherLoading, setWeatherLoading] = React.useState(false);
       const [weatherError, setWeatherError] = React.useState("");
+      const [radarFrames, setRadarFrames] = React.useState([]);
+      const [radarFrameIdx, setRadarFrameIdx] = React.useState(0);
+      const [radarOn, setRadarOn] = React.useState(false);
+      const radarLayerRef = React.useRef(null);
+      const [tfrOn, setTfrOn] = React.useState(false);
+      const [tfrLoading, setTfrLoading] = React.useState(false);
+      const [tfrError, setTfrError] = React.useState("");
+      const tfrLayerRef = React.useRef(null);
 
       // Persist state when it changes
       React.useEffect(() => {
@@ -4470,7 +4478,78 @@
         return () => { mapContainer.removeEventListener("click", handleDeleteClick, true); map.remove(); leafletMap.current = null; };
       }, []);
 
-      // Keep setWaypoints accessible from Leaflet events
+      // Fetch RainViewer frames on mount
+      React.useEffect(function() {
+        fetch("https://api.rainviewer.com/public/weather-maps.json")
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            var past = (data.radar && data.radar.past) ? data.radar.past : [];
+            var nowcast = (data.radar && data.radar.nowcast) ? data.radar.nowcast : [];
+            var frames = past.concat(nowcast).map(function(f) {
+              return { path: f.path, time: f.time, host: data.host };
+            });
+            setRadarFrames(frames);
+            setRadarFrameIdx(past.length > 0 ? past.length - 1 : 0);
+          })
+          .catch(function() {});
+      }, []);
+
+      // Add/update/remove radar tile layer when radarOn, frame, or map changes
+      React.useEffect(function() {
+        var map = leafletMap.current;
+        if (!map) return;
+        if (radarLayerRef.current) { map.removeLayer(radarLayerRef.current); radarLayerRef.current = null; }
+        if (!radarOn || radarFrames.length === 0) return;
+        var frame = radarFrames[radarFrameIdx];
+        if (!frame) return;
+        var url = frame.host + frame.path + "/256/{z}/{x}/{y}/2/1_1.png";
+        radarLayerRef.current = L.tileLayer(url, { opacity: 0.6, transparent: true, maxZoom: 19, maxNativeZoom: 7, attribution: "RainViewer" });
+        radarLayerRef.current.addTo(map);
+      }, [radarOn, radarFrameIdx, radarFrames]);
+
+      // Fetch and render TFRs
+      React.useEffect(function() {
+        var map = leafletMap.current;
+        if (!map) return;
+        if (tfrLayerRef.current) { map.removeLayer(tfrLayerRef.current); tfrLayerRef.current = null; }
+        if (!tfrOn) return;
+        setTfrLoading(true);
+        setTfrError("");
+        fetch("https://metar-proxy.mamillh01.workers.dev/?type=tfr")
+          .then(function(r) { return r.json(); })
+          .then(function(geojson) {
+            setTfrLoading(false);
+            if (!geojson.features || geojson.features.length === 0) {
+              setTfrError("No active TFRs");
+              return;
+            }
+            tfrLayerRef.current = L.geoJSON(geojson, {
+              style: function(feature) {
+                var color = (feature.properties && feature.properties.color) || "#ff0000";
+                return { color: color, weight: 2, opacity: 0.9, fillColor: color, fillOpacity: 0.15 };
+              },
+              onEachFeature: function(feature, layer) {
+                var p = feature.properties || {};
+                var typeLabels = { VIP: "Presidential", SEC: "Security", HAZ: "Hazard/Disaster", SPC: "Space Ops", EVT: "Airshow/Event", UAS: "UAS" };
+                var typeLabel = typeLabels[p.type] || p.type || "TFR";
+                layer.bindPopup(
+                  "<div style='font-family:monospace;font-size:12px;min-width:180px'>" +
+                  "<div style='font-weight:bold;margin-bottom:4px'>TFR " + (p.notam || "") + "</div>" +
+                  "<div style='color:#666;margin-bottom:2px'>" + typeLabel + "</div>" +
+                  (p.altitudes ? "<div style='margin-bottom:2px'>" + p.altitudes + "</div>" : "") +
+                  (p.description ? "<div style='font-size:11px;color:#444;margin-top:4px'>" + p.description + "</div>" : "") +
+                  "</div>"
+                );
+              }
+            });
+            tfrLayerRef.current.addTo(map);
+          })
+          .catch(function(e) {
+            setTfrLoading(false);
+            setTfrError("TFR fetch failed");
+          });
+      }, [tfrOn]);
+
       const setWaypointsRef = React.useRef(setWaypoints);
       React.useEffect(() => { setWaypointsRef.current = setWaypoints; }, [setWaypoints]);
       const wpNamesRef = React.useRef(wpNames);
@@ -4633,6 +4712,97 @@
 
           map.on("mousemove", onMove);
           map.on("mouseup", onUp);
+        });
+
+        // Touch support for drag-to-insert
+        hitLine.on("touchstart", function(e) {
+          if (!e.originalEvent.touches || e.originalEvent.touches.length !== 1) return;
+          L.DomEvent.stopPropagation(e);
+          L.DomEvent.preventDefault(e);
+          map.dragging.disable();
+          dragging = true;
+
+          // Convert touch position to latlng
+          function touchToLatLng(touchEvt) {
+            var touch = touchEvt.touches[0] || touchEvt.changedTouches[0];
+            var rect = map.getContainer().getBoundingClientRect();
+            var containerPt = L.point(touch.clientX - rect.left, touch.clientY - rect.top);
+            return map.containerPointToLatLng(containerPt);
+          }
+
+          var startLatLng = touchToLatLng(e.originalEvent);
+
+          // Find closest segment
+          var pts = waypointsRef.current;
+          var best = 0, bestDist = Infinity;
+          var clickPt = map.latLngToLayerPoint(startLatLng);
+          for (var j = 0; j < pts.length - 1; j++) {
+            var p1 = map.latLngToLayerPoint(L.latLng(pts[j].lat, pts[j].lon));
+            var p2 = map.latLngToLayerPoint(L.latLng(pts[j+1].lat, pts[j+1].lon));
+            var dx = p2.x - p1.x, dy = p2.y - p1.y;
+            var lenSq = dx*dx + dy*dy;
+            var t = lenSq > 0 ? Math.max(0, Math.min(1, ((clickPt.x-p1.x)*dx + (clickPt.y-p1.y)*dy) / lenSq)) : 0;
+            var nearX = p1.x + t*dx, nearY = p1.y + t*dy;
+            var d = Math.sqrt((clickPt.x-nearX)*(clickPt.x-nearX) + (clickPt.y-nearY)*(clickPt.y-nearY));
+            if (d < bestDist) { bestDist = d; best = j; }
+          }
+          insertIdx = best + 1;
+
+          ghost = L.circleMarker(startLatLng, {
+            radius: 12, fillColor: "#6d28d9", color: "#fff",
+            weight: 2, opacity: 0.9, fillOpacity: 1,
+          }).addTo(map);
+
+          var dragLine = null;
+
+          function buildDragLatlngsTch(latlng) {
+            var pts = waypointsRef.current;
+            var result = [];
+            for (var k = 0; k < pts.length; k++) {
+              if (k === insertIdx) result.push([latlng.lat, latlng.lng]);
+              result.push([pts[k].lat, pts[k].lon]);
+            }
+            if (insertIdx >= pts.length) result.push([latlng.lat, latlng.lng]);
+            return result;
+          }
+
+          function onTouchMove(ev) {
+            if (!dragging || !ghost) return;
+            ev.preventDefault();
+            var ll = touchToLatLng(ev);
+            ghost.setLatLng(ll);
+            var lls = buildDragLatlngsTch(ll);
+            if (dragLine) { dragLine.setLatLngs(lls); }
+            else { dragLine = L.polyline(lls, { color: "#6d28d9", weight: 4, opacity: 0.8, dashArray: "8,4" }).addTo(map); }
+          }
+
+          function onTouchEnd(ev) {
+            if (!dragging) return;
+            dragging = false;
+            map.dragging.enable();
+            if (ghost) { map.removeLayer(ghost); ghost = null; }
+            if (dragLine) { map.removeLayer(dragLine); dragLine = null; }
+            map.getContainer().removeEventListener("touchmove", onTouchMove);
+            map.getContainer().removeEventListener("touchend", onTouchEnd);
+
+            var ll = touchToLatLng(ev.originalEvent || ev);
+            var newWp = {
+              id: ll.lat.toFixed(2) + "," + ll.lng.toFixed(2),
+              name: "Custom Waypoint",
+              lat: ll.lat,
+              lon: ll.lng,
+              type: "custom"
+            };
+            setWaypointsRef.current(function(prev) {
+              var next = [...prev];
+              next.splice(insertIdx, 0, newWp);
+              return next;
+            });
+          }
+
+          // Use native DOM touch events on the map container for move/end
+          map.getContainer().addEventListener("touchmove", onTouchMove, { passive: false });
+          map.getContainer().addEventListener("touchend", onTouchEnd);
         });
 
         // Cursor hint
@@ -5691,6 +5861,39 @@
 
           {/* Map */}
           <div ref={mapRef} style={{ width: "100%", height: mobile ? "50vh" : "70vh", borderRadius: "4px", border: C.cardBorder + " solid " + C.border, overflow: "hidden" }} />
+
+          {/* Radar + TFR controls */}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "8px", flexWrap: "wrap" }}>
+            <button onClick={function() { setRadarOn(function(v) { return !v; }); }}
+              style={{ padding: "6px 14px", background: radarOn ? C.green : "none", border: C.cardBorder + " solid " + (radarOn ? C.green : C.border), borderRadius: "3px", color: radarOn ? C.btnText : C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer", fontWeight: radarOn ? "bold" : "normal" }}>
+              {radarOn ? "◉ RADAR ON" : "○ RADAR"}
+            </button>
+            {radarOn && radarFrames.length > 0 && (
+              <React.Fragment>
+                <input type="range" min="0" max={radarFrames.length - 1} value={radarFrameIdx}
+                  onChange={function(e) { setRadarFrameIdx(parseInt(e.target.value)); }}
+                  style={{ flex: 1, minWidth: "120px", accentColor: C.green }} />
+                <div style={{ fontSize: "11px", fontFamily: mono, color: C.dim, whiteSpace: "nowrap" }}>
+                  {(function() {
+                    var f = radarFrames[radarFrameIdx];
+                    if (!f) return "—";
+                    var d = new Date(f.time * 1000);
+                    var label = d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) + "Z";
+                    var isNowcast = f.time > Date.now()/1000;
+                    return label + (isNowcast ? " ▶ FCST" : " PAST");
+                  })()}
+                </div>
+              </React.Fragment>
+            )}
+            {radarOn && radarFrames.length === 0 && (
+              <div style={{ fontSize: "11px", fontFamily: mono, color: C.dimmest }}>loading radar...</div>
+            )}
+            <button onClick={function() { setTfrOn(function(v) { return !v; }); }}
+              style={{ padding: "6px 14px", background: tfrOn ? "#dc2626" : "none", border: C.cardBorder + " solid " + (tfrOn ? "#dc2626" : C.border), borderRadius: "3px", color: tfrOn ? "#fff" : C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer", fontWeight: tfrOn ? "bold" : "normal" }}>
+              {tfrLoading ? "○ TFR..." : tfrOn ? "◉ TFR ON" : "○ TFR"}
+            </button>
+            {tfrError && <div style={{ fontSize: "11px", fontFamily: mono, color: C.error }}>{tfrError}</div>}
+          </div>
           <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "8px", letterSpacing: "1px" }}>
             Scroll to zoom · Drag to pan · Hover marker for airport name
           </div>
