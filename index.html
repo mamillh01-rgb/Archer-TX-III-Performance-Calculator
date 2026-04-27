@@ -4714,66 +4714,73 @@
           map.on("mouseup", onUp);
         });
 
-        // Touch support for drag-to-insert
-        hitLine.on("touchstart", function(e) {
-          if (!e.originalEvent.touches || e.originalEvent.touches.length !== 1) return;
-          L.DomEvent.stopPropagation(e);
-          L.DomEvent.preventDefault(e);
-          map.dragging.disable();
-          dragging = true;
+        // Cursor hint (desktop only) — touch handled via native DOM below
+        hitLine.on("mouseover", function() { map.getContainer().style.cursor = "crosshair"; });
+        hitLine.on("mouseout", function() { map.getContainer().style.cursor = ""; });
 
-          // Convert touch position to latlng
-          function touchToLatLng(touchEvt) {
-            var touch = touchEvt.touches[0] || touchEvt.changedTouches[0];
-            var rect = map.getContainer().getBoundingClientRect();
-            var containerPt = L.point(touch.clientX - rect.left, touch.clientY - rect.top);
-            return map.containerPointToLatLng(containerPt);
-          }
+        // Native touch handler — bypass Leaflet's tap interception entirely
+        var mapContainer = map.getContainer();
+        var touchHandler = function(e) {
+          if (!e.touches || e.touches.length !== 1) return;
+          var touch = e.touches[0];
+          var rect = mapContainer.getBoundingClientRect();
+          var containerPt = L.point(touch.clientX - rect.left, touch.clientY - rect.top);
+          var touchLatLng = map.containerPointToLatLng(containerPt);
+          var touchLayerPt = map.latLngToLayerPoint(touchLatLng);
 
-          var startLatLng = touchToLatLng(e.originalEvent);
-
-          // Find closest segment
+          // Check if touch is within 28px of any route segment
           var pts = waypointsRef.current;
           var best = 0, bestDist = Infinity;
-          var clickPt = map.latLngToLayerPoint(startLatLng);
           for (var j = 0; j < pts.length - 1; j++) {
             var p1 = map.latLngToLayerPoint(L.latLng(pts[j].lat, pts[j].lon));
             var p2 = map.latLngToLayerPoint(L.latLng(pts[j+1].lat, pts[j+1].lon));
             var dx = p2.x - p1.x, dy = p2.y - p1.y;
             var lenSq = dx*dx + dy*dy;
-            var t = lenSq > 0 ? Math.max(0, Math.min(1, ((clickPt.x-p1.x)*dx + (clickPt.y-p1.y)*dy) / lenSq)) : 0;
+            var t = lenSq > 0 ? Math.max(0, Math.min(1, ((touchLayerPt.x-p1.x)*dx + (touchLayerPt.y-p1.y)*dy) / lenSq)) : 0;
             var nearX = p1.x + t*dx, nearY = p1.y + t*dy;
-            var d = Math.sqrt((clickPt.x-nearX)*(clickPt.x-nearX) + (clickPt.y-nearY)*(clickPt.y-nearY));
+            var d = Math.sqrt((touchLayerPt.x-nearX)*(touchLayerPt.x-nearX) + (touchLayerPt.y-nearY)*(touchLayerPt.y-nearY));
             if (d < bestDist) { bestDist = d; best = j; }
           }
+          if (bestDist > 28 || pts.length < 2) return; // not close enough to route
+
+          // Close enough — start drag
+          e.preventDefault();
+          e.stopPropagation();
+          map.dragging.disable();
+          dragging = true;
           insertIdx = best + 1;
 
-          ghost = L.circleMarker(startLatLng, {
-            radius: 12, fillColor: "#6d28d9", color: "#fff",
-            weight: 2, opacity: 0.9, fillOpacity: 1,
+          ghost = L.circleMarker(touchLatLng, {
+            radius: 13, fillColor: "#6d28d9", color: "#fff", weight: 2, opacity: 0.9, fillOpacity: 1
           }).addTo(map);
 
           var dragLine = null;
 
-          function buildDragLatlngsTch(latlng) {
-            var pts = waypointsRef.current;
+          function buildLL(ll) {
             var result = [];
             for (var k = 0; k < pts.length; k++) {
-              if (k === insertIdx) result.push([latlng.lat, latlng.lng]);
+              if (k === insertIdx) result.push([ll.lat, ll.lng]);
               result.push([pts[k].lat, pts[k].lon]);
             }
-            if (insertIdx >= pts.length) result.push([latlng.lat, latlng.lng]);
+            if (insertIdx >= pts.length) result.push([ll.lat, ll.lng]);
             return result;
+          }
+
+          function getLL(ev) {
+            var t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]);
+            if (!t) return touchLatLng;
+            var r = mapContainer.getBoundingClientRect();
+            return map.containerPointToLatLng(L.point(t.clientX - r.left, t.clientY - r.top));
           }
 
           function onTouchMove(ev) {
             if (!dragging || !ghost) return;
             ev.preventDefault();
-            var ll = touchToLatLng(ev);
+            var ll = getLL(ev);
             ghost.setLatLng(ll);
-            var lls = buildDragLatlngsTch(ll);
-            if (dragLine) { dragLine.setLatLngs(lls); }
-            else { dragLine = L.polyline(lls, { color: "#6d28d9", weight: 4, opacity: 0.8, dashArray: "8,4" }).addTo(map); }
+            var lls = buildLL(ll);
+            if (dragLine) dragLine.setLatLngs(lls);
+            else dragLine = L.polyline(lls, { color: "#6d28d9", weight: 4, opacity: 0.8, dashArray: "8,4" }).addTo(map);
           }
 
           function onTouchEnd(ev) {
@@ -4782,32 +4789,27 @@
             map.dragging.enable();
             if (ghost) { map.removeLayer(ghost); ghost = null; }
             if (dragLine) { map.removeLayer(dragLine); dragLine = null; }
-            map.getContainer().removeEventListener("touchmove", onTouchMove);
-            map.getContainer().removeEventListener("touchend", onTouchEnd);
-
-            var ll = touchToLatLng(ev.originalEvent || ev);
-            var newWp = {
-              id: ll.lat.toFixed(2) + "," + ll.lng.toFixed(2),
-              name: "Custom Waypoint",
-              lat: ll.lat,
-              lon: ll.lng,
-              type: "custom"
-            };
+            mapContainer.removeEventListener("touchmove", onTouchMove);
+            mapContainer.removeEventListener("touchend", onTouchEnd);
+            var ll = getLL(ev);
+            var newWp = { id: ll.lat.toFixed(4) + "," + ll.lng.toFixed(4), name: "Custom Waypoint", lat: ll.lat, lon: ll.lng, type: "custom" };
             setWaypointsRef.current(function(prev) {
-              var next = [...prev];
+              var next = prev.slice();
               next.splice(insertIdx, 0, newWp);
               return next;
             });
           }
 
-          // Use native DOM touch events on the map container for move/end
-          map.getContainer().addEventListener("touchmove", onTouchMove, { passive: false });
-          map.getContainer().addEventListener("touchend", onTouchEnd);
-        });
+          mapContainer.addEventListener("touchmove", onTouchMove, { passive: false });
+          mapContainer.addEventListener("touchend", onTouchEnd);
+        };
 
-        // Cursor hint
-        hitLine.on("mouseover", function() { map.getContainer().style.cursor = "crosshair"; });
-        hitLine.on("mouseout", function() { map.getContainer().style.cursor = ""; });
+        mapContainer.addEventListener("touchstart", touchHandler, { passive: false });
+        // Store cleanup ref so we can remove it when waypoints re-render
+        if (mapContainer._routeTouchHandler) {
+          mapContainer.removeEventListener("touchstart", mapContainer._routeTouchHandler);
+        }
+        mapContainer._routeTouchHandler = touchHandler;
 
         // Fit map to route only on first plot
         if (waypoints.length >= 2 && routeLayerRef.current && !hasFitRef.current) {
