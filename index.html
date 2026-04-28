@@ -4055,10 +4055,10 @@
       const [radarFrameIdx, setRadarFrameIdx] = React.useState(0);
       const [radarOn, setRadarOn] = React.useState(false);
       const radarLayerRef = React.useRef(null);
-      const [tfrOn, setTfrOn] = React.useState(false);
-      const [tfrLoading, setTfrLoading] = React.useState(false);
-      const [tfrError, setTfrError] = React.useState("");
-      const tfrLayerRef = React.useRef(null);
+      const [profileOpen, setProfileOpen] = React.useState(true);
+      const [profileData, setProfileData] = React.useState(null);
+      const [profileLoading, setProfileLoading] = React.useState(false);
+      const [airspaceData, setAirspaceData] = React.useState(null);
 
       // Persist state when it changes
       React.useEffect(() => {
@@ -4507,48 +4507,81 @@
         radarLayerRef.current.addTo(map);
       }, [radarOn, radarFrameIdx, radarFrames]);
 
-      // Fetch and render TFRs
+      // Fetch elevation profile when waypoints change
       React.useEffect(function() {
-        var map = leafletMap.current;
-        if (!map) return;
-        if (tfrLayerRef.current) { map.removeLayer(tfrLayerRef.current); tfrLayerRef.current = null; }
-        if (!tfrOn) return;
-        setTfrLoading(true);
-        setTfrError("");
-        fetch("https://metar-proxy.mamillh01.workers.dev/?type=tfr")
-          .then(function(r) { return r.json(); })
-          .then(function(geojson) {
-            setTfrLoading(false);
-            if (!geojson.features || geojson.features.length === 0) {
-              setTfrError("No active TFRs");
-              return;
-            }
-            tfrLayerRef.current = L.geoJSON(geojson, {
-              style: function(feature) {
-                var color = (feature.properties && feature.properties.color) || "#ff0000";
-                return { color: color, weight: 2, opacity: 0.9, fillColor: color, fillOpacity: 0.15 };
-              },
-              onEachFeature: function(feature, layer) {
-                var p = feature.properties || {};
-                var typeLabels = { VIP: "Presidential", SEC: "Security", HAZ: "Hazard/Disaster", SPC: "Space Ops", EVT: "Airshow/Event", UAS: "UAS" };
-                var typeLabel = typeLabels[p.type] || p.type || "TFR";
-                layer.bindPopup(
-                  "<div style='font-family:monospace;font-size:12px;min-width:180px'>" +
-                  "<div style='font-weight:bold;margin-bottom:4px'>TFR " + (p.notam || "") + "</div>" +
-                  "<div style='color:#666;margin-bottom:2px'>" + typeLabel + "</div>" +
-                  (p.altitudes ? "<div style='margin-bottom:2px'>" + p.altitudes + "</div>" : "") +
-                  (p.description ? "<div style='font-size:11px;color:#444;margin-top:4px'>" + p.description + "</div>" : "") +
-                  "</div>"
-                );
-              }
+        setProfileData(null);
+        setAirspaceData(null);
+        if (waypoints.length < 2) { return; }
+
+        // Sample ~90 points evenly along the full route
+        var legs = [];
+        for (var i = 0; i < waypoints.length - 1; i++) legs.push({ from: waypoints[i], to: waypoints[i+1] });
+        var totalDist = legs.reduce(function(s, l) {
+          var dlat = l.to.lat - l.from.lat, dlon = l.to.lon - l.from.lon;
+          return s + Math.sqrt(dlat*dlat + dlon*dlon) * 60;
+        }, 0);
+        var NUM_POINTS = 150;
+        var points = [];
+        var cumDists = [0];
+        var wpDistances = [0]; // cumulative NM at each waypoint
+
+        legs.forEach(function(leg, li) {
+          var dlat = leg.to.lat - leg.from.lat, dlon = leg.to.lon - leg.from.lon;
+          var legDistNM = Math.sqrt(dlat*dlat + dlon*dlon) * 60;
+          wpDistances.push(wpDistances[li] + legDistNM);
+          var nSeg = Math.max(2, Math.round(NUM_POINTS * legDistNM / totalDist));
+          for (var j = (li === 0 ? 0 : 1); j <= nSeg; j++) {
+            var t = j / nSeg;
+            points.push({ lat: leg.from.lat + t * dlat, lon: leg.from.lon + t * dlon });
+            if (j > 0 || li === 0) cumDists.push(wpDistances[li] + t * legDistNM);
+          }
+        });
+
+        setProfileLoading(true);
+        var body = JSON.stringify(points.map(function(p) { return { lat: Math.round(p.lat * 10000)/10000, lon: Math.round(p.lon * 10000)/10000 }; }));
+
+        // Fetch elevation and airspaces in parallel
+        var lats = waypoints.map(function(w) { return w.lat; });
+        var lons = waypoints.map(function(w) { return w.lon; });
+        var pad = 0.3;
+        var minLat = Math.min.apply(null, lats) - pad;
+        var maxLat = Math.max.apply(null, lats) + pad;
+        var minLon = Math.min.apply(null, lons) - pad;
+        var maxLon = Math.max.apply(null, lons) + pad;
+
+        Promise.all([
+          fetch("https://metar-proxy.mamillh01.workers.dev/?type=elevation&points=" + encodeURIComponent(body))
+            .then(function(r) {
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              return r.json();
+            })
+            .catch(function() {
+              // Retry once after 2 seconds on failure (rate limit)
+              return new Promise(function(resolve) { setTimeout(resolve, 2000); })
+                .then(function() {
+                  return fetch("https://metar-proxy.mamillh01.workers.dev/?type=elevation&points=" + encodeURIComponent(body))
+                    .then(function(r) { return r.json(); })
+                    .catch(function() { return {}; });
+                });
+            }),
+          fetch("https://metar-proxy.mamillh01.workers.dev/?type=airspaces&minLat=" + minLat + "&maxLat=" + maxLat + "&minLon=" + minLon + "&maxLon=" + maxLon + "&t=" + Math.floor(Date.now()/60000))
+            .then(function(r) { return r.json(); })
+            .catch(function() { return {}; })
+        ]).then(function(results) {
+          setProfileLoading(false);
+          var elevData = results[0], asData = results[1];
+          if (elevData && elevData.elevations && elevData.elevations.length > 0) {
+            setProfileData({
+              elevations: elevData.elevations,
+              distances: cumDists.slice(0, elevData.elevations.length),
+              totalDist: totalDist,
+              waypoints: waypoints,
+              wpDistances: wpDistances
             });
-            tfrLayerRef.current.addTo(map);
-          })
-          .catch(function(e) {
-            setTfrLoading(false);
-            setTfrError("TFR fetch failed");
-          });
-      }, [tfrOn]);
+          }
+          if (asData && asData.airspaces) setAirspaceData(asData.airspaces);
+        }).catch(function() { setProfileLoading(false); });
+      }, [waypoints]);
 
       const setWaypointsRef = React.useRef(setWaypoints);
       React.useEffect(() => { setWaypointsRef.current = setWaypoints; }, [setWaypoints]);
@@ -5890,15 +5923,369 @@
             {radarOn && radarFrames.length === 0 && (
               <div style={{ fontSize: "11px", fontFamily: mono, color: C.dimmest }}>loading radar...</div>
             )}
-            <button onClick={function() { setTfrOn(function(v) { return !v; }); }}
-              style={{ padding: "6px 14px", background: tfrOn ? "#dc2626" : "none", border: C.cardBorder + " solid " + (tfrOn ? "#dc2626" : C.border), borderRadius: "3px", color: tfrOn ? "#fff" : C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer", fontWeight: tfrOn ? "bold" : "normal" }}>
-              {tfrLoading ? "○ TFR..." : tfrOn ? "◉ TFR ON" : "○ TFR"}
-            </button>
-            {tfrError && <div style={{ fontSize: "11px", fontFamily: mono, color: C.error }}>{tfrError}</div>}
+            <a href="https://tfr.faa.gov/tfr3/?page=map" target="_blank" rel="noopener noreferrer"
+              style={{ padding: "6px 14px", background: "none", border: C.cardBorder + " solid " + C.border, borderRadius: "3px", color: C.dim, fontFamily: mono, fontSize: "11px", letterSpacing: "2px", cursor: "pointer", textDecoration: "none", display: "inline-block" }}>
+              ↗ FAA TFR MAP
+            </a>
           </div>
           <div style={{ fontSize: "11px", color: C.dimmest, marginTop: "8px", letterSpacing: "1px" }}>
             Scroll to zoom · Drag to pan · Hover marker for airport name
           </div>
+
+          {/* Route Profile Panel */}
+          {waypoints.length >= 2 && (
+            <div style={{ marginTop: "12px", border: C.cardBorder + " solid " + C.border, borderRadius: "4px", overflow: "hidden" }}>
+              <button onClick={function() { setProfileOpen(function(v) { return !v; }); }}
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: C.card, border: "none", cursor: "pointer", fontFamily: mono, fontSize: "11px", letterSpacing: "2px", color: C.dim }}>
+                <span>⛰ TERRAIN PROFILE</span>
+                <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  {profileLoading && <span style={{ color: C.dimmest }}>LOADING...</span>}
+                  {profileData && profileData.totalDist > 0 && !profileLoading && (function() {
+                    var cruiseFt = parseFloat(cruiseAlt) || 0;
+                    var clearance = 1000;
+                    var tNM = profileData.totalDist;
+                    var buf = Math.min(3, tNM * 0.08);
+                    var climbEnd = (tocTod && !tocTod.infeasible) ? tocTod.tocNM * (tNM / tocTod.totalDist) : tNM * 0.2;
+                    var descentStart = (tocTod && !tocTod.infeasible) ? (tocTod.totalDist - tocTod.todNM) * (tNM / tocTod.totalDist) : tNM * 0.8;
+                    var hasWarning = profileData.elevations && profileData.elevations.some(function(e, i) {
+                      var nm = profileData.distances && profileData.distances[i];
+                      if (!nm || nm < buf || nm > tNM - buf) return false;
+                      if (nm < climbEnd || nm > descentStart) return false;
+                      return cruiseFt - e < clearance && e > 0;
+                    });
+                    return hasWarning ? React.createElement("span", { style: { color: "#ef4444", fontWeight: "bold" } }, "⚠ TERRAIN") : React.createElement("span", { style: { color: C.green } }, "✓ CLEAR");
+                  })()}
+                  <span>{profileOpen ? "▲" : "▼"}</span>
+                </span>
+              </button>
+              {profileOpen && (
+                <div style={{ padding: "16px", background: C.isLight ? "#f8fafc" : "#090d18" }}>
+                  {!profileData && !profileLoading && <div style={{ fontFamily: mono, fontSize: "11px", color: C.dimmest, textAlign: "center", padding: "20px" }}>Plot a route to see terrain profile</div>}
+                  {profileLoading && <div style={{ fontFamily: mono, fontSize: "11px", color: C.dimmest, textAlign: "center", padding: "20px" }}>Fetching elevation data...</div>}
+                  {profileData && profileData.totalDist > 0 && profileData.elevations && profileData.elevations.length > 0 && !profileLoading && (function() {
+                    var elevs = profileData.elevations;
+                    var dists = profileData.distances;
+                    var totalNM = profileData.totalDist;
+                    var wpDists = profileData.wpDistances;
+                    var cruiseFt = parseFloat(cruiseAlt) || 0;
+                    var maxElev = Math.max.apply(null, elevs);
+                    var CLEARANCE = 1000;
+                    var yMax = Math.max(cruiseFt * 1.15, maxElev + 500, 2000);
+                    var yMin = 0;
+                    var W = 800, H = 200, PAD_L = 52, PAD_R = 12, PAD_T = 16, PAD_B = 36;
+                    var plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
+
+                    function xScale(nm) { return PAD_L + (nm / totalNM) * plotW; }
+                    function yScale(ft) { return PAD_T + plotH - ((ft - yMin) / (yMax - yMin)) * plotH; }
+
+                    // ── Airspace intersection math ──────────────────────────
+                    // For each airspace polygon, find where the route line enters/exits it
+                    // Route is a polyline of waypoints; we check each leg segment
+                    var airspaceRects = [];
+                    var asColors = {
+                      'A': '#ef4444', 'B': '#1d4ed8', 'C': '#d946ef', 'D': '#60a5fa',
+                      'E': '#818cf8', 'F': '#94a3b8', 'G': '#94a3b8',
+                      'MOA': '#ef4444', 'RESTRICTED': '#ef4444', 'PROHIBITED': '#dc2626',
+                      'DANGER': '#ef4444', 'WARNING': '#f59e0b', 'ALERT': '#f59e0b',
+                      'TFR': '#ef4444', 'CTR': '#60a5fa', 'TMA': '#1d4ed8',
+                      'CTA': '#1d4ed8', 'ATZ': '#60a5fa', 'MATZ': '#f59e0b',
+                      'TMZ': '#94a3b8', 'RMZ': '#94a3b8', 'MTR': '#f97316',
+                    };
+                    var typeLabels = {
+                      'MOA':'MOA', 'RESTRICTED':'R', 'PROHIBITED':'P', 'DANGER':'MOA',
+                      'WARNING':'WARN', 'ALERT':'ALT', 'TFR':'TFR', 'CTR':'CTR',
+                      'TMA':'TMA', 'CTA':'CTA', 'ATZ':'ATZ', 'MATZ':'MAT',
+                      'TMZ':'TMZ', 'RMZ':'RMZ', 'MTR':'MTR',
+                    };
+
+                    function segmentsIntersect(p1, p2, p3, p4) {
+                      var d1x = p2[0]-p1[0], d1y = p2[1]-p1[1];
+                      var d2x = p4[0]-p3[0], d2y = p4[1]-p3[1];
+                      var cross = d1x*d2y - d1y*d2x;
+                      if (Math.abs(cross) < 1e-10) return null;
+                      var dx = p3[0]-p1[0], dy = p3[1]-p1[1];
+                      var t = (dx*d2y - dy*d2x) / cross;
+                      var u = (dx*d1y - dy*d1x) / cross;
+                      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return t;
+                      return null;
+                    }
+
+                    function pointInPolygon(pt, poly) {
+                      var x = pt[0], y = pt[1], inside = false;
+                      for (var i = 0, j = poly.length-1; i < poly.length; j = i++) {
+                        var xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+                        if (((yi > y) !== (yj > y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi)) inside = !inside;
+                      }
+                      return inside;
+                    }
+
+                    if (airspaceData && totalNM > 0 && yMax > yMin) {
+                      airspaceData.forEach(function(as) {
+                        try {
+                        if (!as.geometry || !as.geometry.coordinates) return;
+                        // Skip Class E, Class G, and parachute/sport airspace
+                        var skipClasses = ['E', 'F', 'G', 'UNCLASSIFIED'];
+                        var skipTypes = ['SPORT', 'GLIDING', 'LOW_OVERFLIGHT', 'AERIAL_SPORTING_RECREATIONAL', 'FIR', 'UIR', 'AIRWAY', 'TRA'];
+                        var asClassCheck = String(as.asClass || '').toUpperCase();
+                        var asTypeCheck = String(as.type || '').toUpperCase();
+                        var asName = String(as.name || '').toUpperCase();
+                        if (skipClasses.indexOf(asClassCheck) >= 0) return;
+                        if (skipTypes.indexOf(asTypeCheck) >= 0) return;
+                        // Skip parachute drop zones (DZ in name) and glider/sport areas
+                        if (asName.indexOf(' DZ ') >= 0 || asName.indexOf('DZ ') === 0 || asName.indexOf(' DZ') === asName.length - 3) return;
+                        if (asName.indexOf('PARACHUTE') >= 0 || asName.indexOf('SKYDIVE') >= 0 || asName.indexOf('DROP ZONE') >= 0) return;
+                        var poly = as.geometry.coordinates[0]; // outer ring [lon,lat]
+                        if (!poly || poly.length < 3) return;
+
+                        // Find all entry/exit NM distances along the full route
+                        var crossings = []; // {nm, entering}
+                        var legStartNM = 0;
+                        for (var wi = 0; wi < waypoints.length - 1; wi++) {
+                          var from = [waypoints[wi].lon, waypoints[wi].lat];
+                          var to = [waypoints[wi+1].lon, waypoints[wi+1].lat];
+                          var dx = to[0]-from[0], dy = to[1]-from[1];
+                          var legNM = Math.sqrt(dx*dx+dy*dy)*60;
+                          // Check each polygon edge
+                          for (var pi = 0; pi < poly.length-1; pi++) {
+                            var t = segmentsIntersect(from, to, poly[pi], poly[pi+1]);
+                            if (t !== null) {
+                              crossings.push({ nm: legStartNM + t * legNM });
+                            }
+                          }
+                          legStartNM += legNM;
+                        }
+                        crossings.sort(function(a,b){return a.nm-b.nm;});
+
+                        // Check if route start is inside polygon
+                        var startInside = pointInPolygon([waypoints[0].lon, waypoints[0].lat], poly);
+                        var segments = [];
+                        if (startInside) crossings.unshift({ nm: 0 });
+                        if (crossings.length % 2 !== 0) crossings.push({ nm: totalNM });
+                        for (var ci = 0; ci < crossings.length - 1; ci += 2) {
+                          segments.push({ fromNM: crossings[ci].nm, toNM: crossings[ci+1].nm });
+                        }
+
+                        var asClass = String(as.asClass || '').toUpperCase();
+                        var asType = String(as.type || '').toUpperCase();
+                        var asName = String(as.name || '').toUpperCase();
+                        // Detect MOAs by name even if OpenAIP classifies them as DANGER
+                        if (asName.includes('MOA') || asName.match(/\bRACER\b|\bBOMBER\b|\bFIGHTER\b|\bGUN\b/)) asType = 'MOA';
+                        // Special use types override ICAO class for color and label
+                        var specialTypes = ['MOA','RESTRICTED','PROHIBITED','DANGER','WARNING','ALERT','TFR','TRA','MTR'];
+                        var isSpecial = specialTypes.indexOf(asType) >= 0;
+                        var color = isSpecial ? (asColors[asType] || '#f97316') : (asColors[asClass] || asColors[asType] || '#94a3b8');
+                        var label = isSpecial ? (typeLabels[asType] || asType.slice(0,3)) : (asClass && asClass !== 'UNK' && asClass !== 'UNCLASSIFIED' ? asClass : (typeLabels[asType] || asType.slice(0,3)));
+                        var lowerFt = Math.max(as.lowerFt || 0, yMin);
+                        var upperFt = Math.min(as.upperFt || yMax, yMax);
+                        if (upperFt <= lowerFt || upperFt <= 0) return;
+
+                        segments.forEach(function(seg) {
+                          if (seg.toNM <= seg.fromNM) return;
+                          airspaceRects.push({
+                            x1: xScale(seg.fromNM), x2: xScale(seg.toNM),
+                            y1: yScale(upperFt), y2: yScale(lowerFt),
+                            color: color, name: as.name, asClass: asClass, label: label,
+                            lower: lowerFt, upper: as.upperFt
+                          });
+                        });
+                        } catch(e) {} // skip malformed airspace
+                      });
+                    }
+                    // ────────────────────────────────────────────────────────
+
+                    // Build terrain polygon path
+                    var terrainPts = elevs.map(function(e, i) { return xScale(dists[i]) + "," + yScale(e); });
+                    var terrainPath = "M" + xScale(dists[0]) + "," + yScale(0) +
+                      " L" + terrainPts.join(" L") +
+                      " L" + xScale(dists[dists.length-1]) + "," + yScale(0) + " Z";
+
+                    // Y-axis tick values
+                    var yTicks = [];
+                    var tickStep = yMax > 15000 ? 5000 : yMax > 8000 ? 2000 : 1000;
+                    for (var t = 0; t <= yMax; t += tickStep) yTicks.push(t);
+
+                    // Build flight path points: dep elev → TOC (cruise) → TOD → dest elev
+                    var depElevFt = (waypoints[0] && waypoints[0].elev) ? waypoints[0].elev : (elevs[0] || 0);
+                    var destElevFt = (waypoints[waypoints.length-1] && waypoints[waypoints.length-1].elev) ? waypoints[waypoints.length-1].elev : (elevs[elevs.length-1] || 0);
+                    var flightPathPts = [];
+                    var hasTocTod = tocTod && !tocTod.infeasible;
+                    if (hasTocTod) {
+                      // Scale TOC/TOD from tocTod.totalDist space to profile totalNM space
+                      var scale = tocTod.totalDist > 0 ? totalNM / tocTod.totalDist : 1;
+                      var tocNM = tocTod.tocNM * scale;
+                      var todNM = (tocTod.totalDist - tocTod.todNM) * scale;
+                      flightPathPts = [
+                        { nm: 0, ft: depElevFt },
+                        { nm: tocNM, ft: cruiseFt },
+                        { nm: todNM, ft: cruiseFt },
+                        { nm: totalNM, ft: destElevFt }
+                      ];
+                    } else {
+                      // No TOC/TOD — simple trapezoid guess at 20% climb/descent
+                      var climbNM = Math.min(totalNM * 0.2, 15);
+                      var descNM = Math.min(totalNM * 0.2, 15);
+                      flightPathPts = [
+                        { nm: 0, ft: depElevFt },
+                        { nm: climbNM, ft: cruiseFt },
+                        { nm: totalNM - descNM, ft: cruiseFt },
+                        { nm: totalNM, ft: destElevFt }
+                      ];
+                    }
+
+                    // Flight path polyline string
+                    var fpPolyline = flightPathPts.map(function(p) { return xScale(p.nm) + "," + yScale(p.ft); }).join(" ");
+
+                    // Flight path filled area (below the path line)
+                    var fpFill = "M" + xScale(flightPathPts[0].nm) + "," + yScale(0) +
+                      " L" + fpPolyline.replace(/,/g, ",") +
+                      " L" + xScale(flightPathPts[flightPathPts.length-1].nm) + "," + yScale(0) + " Z";
+
+                    // Warning: check flight path altitude vs terrain at each sample point
+                    function flightAltAtNM(nm) {
+                      for (var fi = 0; fi < flightPathPts.length - 1; fi++) {
+                        var a = flightPathPts[fi], b = flightPathPts[fi+1];
+                        if (nm >= a.nm && nm <= b.nm) {
+                          var t = (b.nm - a.nm) > 0 ? (nm - a.nm) / (b.nm - a.nm) : 0;
+                          return a.ft + t * (b.ft - a.ft);
+                        }
+                      }
+                      return cruiseFt;
+                    }
+
+                    // Rebuild warning zones based on flight path vs terrain
+                    var warnSegs = [];
+                    var warnSegs = [];
+                    var inWarn = false, warnStart = null;
+                    var bufferNM = Math.min(3, totalNM * 0.08);
+                    var climbEndNM = hasTocTod ? tocNM : totalNM * 0.2;
+                    var descentStartNM = hasTocTod ? todNM : totalNM * 0.8;
+                    elevs.forEach(function(e, i) {
+                      var nm = dists[i];
+                      // Suppress in buffer zones AND during climb/descent phases
+                      var inBuffer = nm < bufferNM || nm > totalNM - bufferNM;
+                      var inClimb = nm < climbEndNM;
+                      var inDescent = nm > descentStartNM;
+                      var fAlt = flightAltAtNM(nm);
+                      var close = !inBuffer && !inClimb && !inDescent && fAlt - e < CLEARANCE && e > 0;
+                      if (close && !inWarn) { inWarn = true; warnStart = i; }
+                      if (!close && inWarn) { warnSegs.push({ from: warnStart, to: i - 1 }); inWarn = false; }
+                    });
+                    if (inWarn) warnSegs.push({ from: warnStart, to: elevs.length - 1 });
+
+                    // TOC/TOD label elements only (no vertical lines — flight path makes them clear)
+                    var tocTodSvg = null;
+                    if (hasTocTod) {
+                      var tocX = xScale(tocNM);
+                      var todX = xScale(todNM);
+                      var tCol2 = C.isLight ? "#0e6aba" : C.cool;
+                      tocTodSvg = React.createElement(React.Fragment, null,
+                        React.createElement("circle", { cx: tocX, cy: yScale(cruiseFt), r: 3, fill: C.green }),
+                        React.createElement("text", { x: tocX + 5, y: yScale(cruiseFt) - 5, fill: C.green, fontSize: 9, fontFamily: mono }, "TOC"),
+                        React.createElement("circle", { cx: todX, cy: yScale(cruiseFt), r: 3, fill: tCol2 }),
+                        React.createElement("text", { x: todX + 5, y: yScale(cruiseFt) - 5, fill: tCol2, fontSize: 9, fontFamily: mono }, "TOD")
+                      );
+                    }
+
+                    // Dep/dest dot labels
+                    var depDestSvg = React.createElement(React.Fragment, null,
+                      React.createElement("circle", { cx: xScale(0), cy: yScale(depElevFt), r: 4, fill: C.green, stroke: C.isLight ? "#fff" : "#0a0e1a", strokeWidth: 1.5 }),
+                      React.createElement("circle", { cx: xScale(totalNM), cy: yScale(destElevFt), r: 4, fill: C.isLight ? "#0e6aba" : C.cool, stroke: C.isLight ? "#fff" : "#0a0e1a", strokeWidth: 1.5 })
+                    );
+
+                    return React.createElement("svg", {
+                      viewBox: "0 0 " + W + " " + H,
+                      style: { width: "100%", height: "auto", display: "block" },
+                      xmlns: "http://www.w3.org/2000/svg"
+                    },
+                      // Y-axis gridlines and labels
+                      yTicks.map(function(t) {
+                        return React.createElement(React.Fragment, { key: t },
+                          React.createElement("line", { x1: PAD_L, y1: yScale(t), x2: PAD_L + plotW, y2: yScale(t), stroke: C.isLight ? "#cbd5e1" : "#1e293b", strokeWidth: 1 }),
+                          React.createElement("text", { x: PAD_L - 4, y: yScale(t) + 4, textAnchor: "end", fill: C.dimmest, fontSize: 9, fontFamily: mono }, (t/1000).toFixed(0) + "k")
+                        );
+                      }),
+                      // Airspace rectangles
+                      airspaceRects.filter(function(ar) {
+                        return isFinite(ar.x1) && isFinite(ar.x2) && isFinite(ar.y1) && isFinite(ar.y2) &&
+                          ar.x2 > ar.x1 + 1 && ar.y2 > ar.y1 && ar.label && ar.label.length > 0;
+                      }).map(function(ar, ai) {
+                        return React.createElement("g", { key: "as" + ai },
+                          React.createElement("rect", {
+                            x: ar.x1, y: ar.y1,
+                            width: Math.max(ar.x2 - ar.x1, 2),
+                            height: Math.max(ar.y2 - ar.y1, 2),
+                            fill: ar.color, fillOpacity: 0.25,
+                            stroke: ar.color, strokeWidth: 1.5, strokeOpacity: 0.9,
+                            strokeDasharray: ar.asClass === 'E' || ar.asClass === 'G' ? "4,3" : "none"
+                          }),
+                          React.createElement("text", {
+                            x: Math.max(ar.x1 + 1, ar.x1 + (ar.x2-ar.x1)/2), y: ar.y1 + 9,
+                            textAnchor: "middle", fill: ar.color,
+                            fontSize: 8, fontFamily: mono, opacity: 0.9
+                          }, ar.label)
+                        );
+                      }),
+                      // Warning zones
+                      warnSegs.map(function(seg, si) {
+                        var x1 = xScale(dists[seg.from]), x2 = xScale(dists[seg.to]);
+                        return React.createElement("rect", { key: si, x: x1, y: PAD_T, width: Math.max(x2 - x1, 2), height: plotH, fill: "#ef4444", opacity: 0.12 });
+                      }),
+                      // Terrain fill
+                      React.createElement("path", { d: terrainPath, fill: C.isLight ? "#92400e" : "#78350f", opacity: 0.7 }),
+                      // Terrain outline
+                      React.createElement("polyline", {
+                        points: elevs.map(function(e, i) { return xScale(dists[i]) + "," + yScale(e); }).join(" "),
+                        fill: "none", stroke: C.isLight ? "#b45309" : "#d97706", strokeWidth: 1.5
+                      }),
+                      // Warning terrain highlight - separate segments to avoid diagonal lines
+                      (function() {
+                        var segs = [];
+                        var cur = [];
+                        elevs.forEach(function(e, i) {
+                          var fAlt = flightAltAtNM(dists[i]);
+                          var close = fAlt - e < CLEARANCE && e > 0;
+                          if (close) {
+                            cur.push(xScale(dists[i]) + "," + yScale(e));
+                          } else {
+                            if (cur.length > 1) segs.push(cur.join(" "));
+                            cur = [];
+                          }
+                        });
+                        if (cur.length > 1) segs.push(cur.join(" "));
+                        return segs.map(function(pts, si) {
+                          return React.createElement("polyline", { key: si, points: pts, fill: "none", stroke: "#ef4444", strokeWidth: 2.5 });
+                        });
+                      })(),
+                      // Flight path fill (semi-transparent)
+                      React.createElement("path", { d: fpFill, fill: C.green, opacity: 0.08 }),
+                      // Flight path line
+                      React.createElement("polyline", { points: fpPolyline, fill: "none", stroke: C.green, strokeWidth: 2 }),
+                      // TOC/TOD dots and labels
+                      tocTodSvg,
+                      // Dep/dest dots
+                      depDestSvg,
+                      // Cruise altitude label
+                      React.createElement("text", { x: PAD_L + plotW - 2, y: yScale(cruiseFt) - 5, textAnchor: "end", fill: C.green, fontSize: 9, fontFamily: mono, opacity: 0.8 }, cruiseFt + " ft"),
+                      // Waypoint vertical markers
+                      waypoints.map(function(wp, wi) {
+                        if (wi === 0 || wi === waypoints.length - 1) return null;
+                        var x = xScale(wpDists[wi]);
+                        return React.createElement("line", { key: wi, x1: x, y1: PAD_T, x2: x, y2: PAD_T + plotH, stroke: C.border, strokeWidth: 1, strokeDasharray: "2,3" });
+                      }),
+                      // X-axis waypoint labels
+                      waypoints.map(function(wp, wi) {
+                        var x = xScale(wpDists[wi]);
+                        var label = wp.id && wp.id.length <= 6 ? wp.id : (wp.id ? wp.id.substring(0, 5) : "WP" + wi);
+                        return React.createElement("text", { key: wi, x: x, y: H - 4, textAnchor: wi === 0 ? "start" : wi === waypoints.length-1 ? "end" : "middle", fill: C.dim, fontSize: 9, fontFamily: mono }, label);
+                      }),
+                      // Border
+                      React.createElement("rect", { x: PAD_L, y: PAD_T, width: plotW, height: plotH, fill: "none", stroke: C.border, strokeWidth: 1 })
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Auth modal for unauthenticated users */}
           {showNavlogAuth && (
