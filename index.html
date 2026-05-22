@@ -4034,6 +4034,7 @@
       const markersRef = React.useRef([]);
       const tocTodMarkersRef = React.useRef([]);
       const hasFitRef = React.useRef(false);
+      const shouldFitRef = React.useRef(false);
       const tocTodRef = React.useRef(null);
       React.useEffect(() => { tocTodRef.current = tocTod; }, [tocTod]);
       const [routeInput, setRouteInput] = React.useState(savedState.routeInput || "");
@@ -4059,6 +4060,10 @@
       const [profileData, setProfileData] = React.useState(null);
       const [profileLoading, setProfileLoading] = React.useState(false);
       const [airspaceData, setAirspaceData] = React.useState(null);
+      const [profileZoom, setProfileZoom] = React.useState(1);
+      const [profilePanX, setProfilePanX] = React.useState(0);
+      const profileDragRef = React.useRef(null);
+      const setWaypointsRef = React.useRef(setWaypoints);
 
       // Persist state when it changes
       React.useEffect(() => {
@@ -4511,6 +4516,8 @@
       React.useEffect(function() {
         setProfileData(null);
         setAirspaceData(null);
+        setProfileZoom(1);
+        setProfilePanX(0);
         if (waypoints.length < 2) { return; }
 
         // Sample ~90 points evenly along the full route
@@ -4583,7 +4590,6 @@
         }).catch(function() { setProfileLoading(false); });
       }, [waypoints]);
 
-      const setWaypointsRef = React.useRef(setWaypoints);
       React.useEffect(() => { setWaypointsRef.current = setWaypoints; }, [setWaypoints]);
       const wpNamesRef = React.useRef(wpNames);
       React.useEffect(() => { wpNamesRef.current = wpNames; }, [wpNames]);
@@ -4844,9 +4850,9 @@
         }
         mapContainer._routeTouchHandler = touchHandler;
 
-        // Fit map to route only on first plot
-        if (waypoints.length >= 2 && routeLayerRef.current && !hasFitRef.current) {
-          hasFitRef.current = true;
+        // Fit map to route when explicitly requested (PLOT ROUTE or load saved)
+        if (waypoints.length >= 2 && routeLayerRef.current && shouldFitRef.current) {
+          shouldFitRef.current = false;
           map.fitBounds(routeLayerRef.current.getBounds(), { padding: [40, 40] });
         }
         if (waypoints.length === 0) hasFitRef.current = false;
@@ -4919,6 +4925,7 @@
             return data;
           }));
           setWaypoints(results);
+          shouldFitRef.current = true;
           setLegVars({});
           // Auto-populate elevations for airports
           var newAlts = {};
@@ -5066,7 +5073,7 @@
       const loadRoute = (route) => {
         var d = route.route_data;
         if (d.routeInput !== undefined) setRouteInput(d.routeInput);
-        if (d.waypoints) setWaypoints(d.waypoints);
+        if (d.waypoints) { setWaypoints(d.waypoints); shouldFitRef.current = true; }
         if (d.wpNames) setWpNames(d.wpNames);
         if (d.cruiseAlt) setCruiseAlt(d.cruiseAlt);
         if (d.cruisePower) setCruisePower(d.cruisePower);
@@ -5673,7 +5680,7 @@
                                   <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim, color: tocTodWx.tocVar !== undefined && tocTodWx.tocVar !== null ? tCol : dash }}>{tocTodWx.tocVar !== undefined && tocTodWx.tocVar !== null ? (tocTodWx.tocVar > 0 ? "E" : "W") + Math.abs(tocTodWx.tocVar) + "°" : "—"}</td>
                                   <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, fontWeight: "bold", fontSize: "13px", color: tocWV ? gCol : dash, letterSpacing: "0.5px" }}>{tocWV ? tocWV.mh + "°" : "—"}</td>
                                   <td style={{ ...cell, color: gCol, borderRight: C.cardBorder + " solid " + C.borderDim }}>{tocDistIntoLeg.toFixed(1)}</td>
-                                  <td style={{ ...cell, color: gCol, borderRight: C.cardBorder + " solid " + C.border }}>{tocDist.toFixed(1)}</td>
+                                  <td style={{ ...cell, color: gCol, borderRight: C.cardBorder + " solid " + C.border }}>{(prevCumDist + tocDistIntoLeg).toFixed(1)}</td>
                                   <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: tocWV && tocWV.gs ? C.text : dash }}>{tocWV && tocWV.gs ? tocWV.gs + "kt" : "—"}</td>
                                 </React.Fragment>
                               );
@@ -5713,7 +5720,7 @@
                                   <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.borderDim, color: tocTodWx.todVar !== undefined && tocTodWx.todVar !== null ? tCol : dash }}>{tocTodWx.todVar !== undefined && tocTodWx.todVar !== null ? (tocTodWx.todVar > 0 ? "E" : "W") + Math.abs(tocTodWx.todVar) + "°" : "—"}</td>
                                   <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, fontWeight: "bold", fontSize: "13px", color: todWV ? gCol : dash, letterSpacing: "0.5px" }}>{todWV ? todWV.mh + "°" : "—"}</td>
                                   <td style={{ ...cell, color: tCol, borderRight: C.cardBorder + " solid " + C.borderDim }}>{todDistIntoLeg.toFixed(1)}</td>
-                                  <td style={{ ...cell, color: tCol, borderRight: C.cardBorder + " solid " + C.border }}>{todDist.toFixed(1)}</td>
+                                  <td style={{ ...cell, color: tCol, borderRight: C.cardBorder + " solid " + C.border }}>{(prevCumDist + todDistIntoLeg).toFixed(1)}</td>
                                   <td style={{ ...cell, borderRight: C.cardBorder + " solid " + C.border, color: todWV && todWV.gs ? C.text : dash }}>{todWV && todWV.gs ? todWV.gs + "kt" : "—"}</td>
                                 </React.Fragment>
                               );
@@ -6082,7 +6089,7 @@
                         segments.forEach(function(seg) {
                           if (seg.toNM <= seg.fromNM) return;
                           airspaceRects.push({
-                            x1: xScale(seg.fromNM), x2: xScale(seg.toNM),
+                            fromNM: seg.fromNM, toNM: seg.toNM,
                             y1: yScale(upperFt), y2: yScale(lowerFt),
                             color: color, name: as.name, asClass: asClass, label: label,
                             lower: lowerFt, upper: as.upperFt
@@ -6094,10 +6101,10 @@
                     // ────────────────────────────────────────────────────────
 
                     // Build terrain polygon path
-                    var terrainPts = elevs.map(function(e, i) { return xScale(dists[i]) + "," + yScale(e); });
-                    var terrainPath = "M" + xScale(dists[0]) + "," + yScale(0) +
+                    var terrainPts = elevs.map(function(e, i) { return xScaleZ(dists[i]) + "," + yScale(e); });
+                    var terrainPath = "M" + xScaleZ(dists[0]) + "," + yScale(0) +
                       " L" + terrainPts.join(" L") +
-                      " L" + xScale(dists[dists.length-1]) + "," + yScale(0) + " Z";
+                      " L" + xScaleZ(dists[dists.length-1]) + "," + yScale(0) + " Z";
 
                     // Y-axis tick values
                     var yTicks = [];
@@ -6132,13 +6139,8 @@
                       ];
                     }
 
-                    // Flight path polyline string
-                    var fpPolyline = flightPathPts.map(function(p) { return xScale(p.nm) + "," + yScale(p.ft); }).join(" ");
-
-                    // Flight path filled area (below the path line)
-                    var fpFill = "M" + xScale(flightPathPts[0].nm) + "," + yScale(0) +
-                      " L" + fpPolyline.replace(/,/g, ",") +
-                      " L" + xScale(flightPathPts[flightPathPts.length-1].nm) + "," + yScale(0) + " Z";
+                    // Flight path — store as NM/ft, compute SVG at render time
+                    // (xScaleZ not yet defined here, computed later at render)
 
                     // Warning: check flight path altitude vs terrain at each sample point
                     function flightAltAtNM(nm) {
@@ -6175,8 +6177,8 @@
                     // TOC/TOD label elements only (no vertical lines — flight path makes them clear)
                     var tocTodSvg = null;
                     if (hasTocTod) {
-                      var tocX = xScale(tocNM);
-                      var todX = xScale(todNM);
+                      var tocX = xScaleZ(tocNM);
+                      var todX = xScaleZ(todNM);
                       var tCol2 = C.isLight ? "#0e6aba" : C.cool;
                       tocTodSvg = React.createElement(React.Fragment, null,
                         React.createElement("circle", { cx: tocX, cy: yScale(cruiseFt), r: 3, fill: C.green }),
@@ -6188,38 +6190,97 @@
 
                     // Dep/dest dot labels
                     var depDestSvg = React.createElement(React.Fragment, null,
-                      React.createElement("circle", { cx: xScale(0), cy: yScale(depElevFt), r: 4, fill: C.green, stroke: C.isLight ? "#fff" : "#0a0e1a", strokeWidth: 1.5 }),
-                      React.createElement("circle", { cx: xScale(totalNM), cy: yScale(destElevFt), r: 4, fill: C.isLight ? "#0e6aba" : C.cool, stroke: C.isLight ? "#fff" : "#0a0e1a", strokeWidth: 1.5 })
+                      React.createElement("circle", { cx: xScaleZ(0), cy: yScale(depElevFt), r: 4, fill: C.green, stroke: C.isLight ? "#fff" : "#0a0e1a", strokeWidth: 1.5 }),
+                      React.createElement("circle", { cx: xScaleZ(totalNM), cy: yScale(destElevFt), r: 4, fill: C.isLight ? "#0e6aba" : C.cool, stroke: C.isLight ? "#fff" : "#0a0e1a", strokeWidth: 1.5 })
                     );
 
-                    return React.createElement("svg", {
+                    // Zoom: content group is scaled/translated, axes stay fixed
+                    var maxZoom = Math.max(8, totalNM / 10);
+                    var maxPanX = Math.max(0, (profileZoom - 1) * plotW);
+                    var clampedPanX = Math.max(0, Math.min(profilePanX, maxPanX));
+
+                    function onWheel(e) {
+                      e.preventDefault();
+                      var rect = e.currentTarget.getBoundingClientRect();
+                      // Mouse position as fraction of the plot area (0=left edge, 1=right edge)
+                      var mouseXPx = e.clientX - rect.left - (PAD_L / W * rect.width);
+                      var plotWidthPx = (plotW / W) * rect.width;
+                      var mouseXFrac = Math.max(0, Math.min(1, mouseXPx / plotWidthPx));
+                      var delta = e.deltaY > 0 ? -0.15 : 0.15;
+                      var maxZoom = Math.max(8, totalNM / 10);
+                      setProfileZoom(function(z) {
+                        var newZ = Math.max(1, Math.min(maxZoom, z + delta * z));
+                        // Point under cursor in NM space: stays fixed
+                        var nmUnderCursor = (clampedPanX / plotW + mouseXFrac) * totalNM / z;
+                        // New pan to keep that NM point under cursor
+                        var newPan = (nmUnderCursor / totalNM * newZ - mouseXFrac) * plotW;
+                        setProfilePanX(Math.max(0, Math.min(Math.max(0, (newZ - 1) * plotW), newPan)));
+                        return newZ;
+                      });
+                    }
+
+                    function onMouseDown(e) {
+                      profileDragRef.current = { startX: e.clientX, startPanX: clampedPanX };
+                    }
+                    function onMouseMove(e) {
+                      if (!profileDragRef.current) return;
+                      var rect = e.currentTarget.getBoundingClientRect();
+                      var dxPx = e.clientX - profileDragRef.current.startX;
+                      var dxSvg = dxPx / rect.width * W;
+                      var newPan = profileDragRef.current.startPanX - dxSvg;
+                      setProfilePanX(Math.max(0, Math.min(maxPanX, newPan)));
+                    }
+                    function onMouseUp() { profileDragRef.current = null; }
+
+                    // Zoomed xScale — stretches content horizontally
+                    function xScaleZ(nm) { if (!totalNM) return PAD_L; return PAD_L + ((nm / totalNM) * plotW * profileZoom) - clampedPanX; }
+
+                    return React.createElement("div", { style: { position: "relative" } },
+                      profileZoom > 1 && React.createElement("button", {
+                        onClick: function() { setProfileZoom(1); setProfilePanX(0); },
+                        style: { position: "absolute", top: 4, right: 4, zIndex: 10, padding: "2px 8px", fontFamily: mono, fontSize: "10px", letterSpacing: "1px", background: C.card, border: C.cardBorder + " solid " + C.border, borderRadius: "3px", color: C.dim, cursor: "pointer" }
+                      }, "RESET"),
+                    React.createElement("svg", {
                       viewBox: "0 0 " + W + " " + H,
-                      style: { width: "100%", height: "auto", display: "block" },
-                      xmlns: "http://www.w3.org/2000/svg"
+                      style: { width: "100%", height: "auto", display: "block", cursor: profileZoom > 1 ? "grab" : "default", userSelect: "none" },
+                      xmlns: "http://www.w3.org/2000/svg",
+                      onWheel: onWheel,
+                      onMouseDown: onMouseDown,
+                      onMouseMove: onMouseMove,
+                      onMouseUp: onMouseUp,
+                      onMouseLeave: onMouseUp,
                     },
-                      // Y-axis gridlines and labels
+                      // ClipPath to contain zoomed content within plot bounds
+                      React.createElement("defs", null,
+                        React.createElement("clipPath", { id: "profileClip" },
+                          React.createElement("rect", { x: PAD_L, y: PAD_T, width: plotW, height: plotH + 1 })
+                        )
+                      ),
+                      // Y-axis gridlines and labels — fixed, not zoomed
                       yTicks.map(function(t) {
                         return React.createElement(React.Fragment, { key: t },
                           React.createElement("line", { x1: PAD_L, y1: yScale(t), x2: PAD_L + plotW, y2: yScale(t), stroke: C.isLight ? "#cbd5e1" : "#1e293b", strokeWidth: 1 }),
                           React.createElement("text", { x: PAD_L - 4, y: yScale(t) + 4, textAnchor: "end", fill: C.dimmest, fontSize: 9, fontFamily: mono }, (t/1000).toFixed(0) + "k")
                         );
                       }),
-                      // Airspace rectangles
+                      // All zoomable content in a clipped group
+                      React.createElement("g", { clipPath: "url(#profileClip)" },
                       airspaceRects.filter(function(ar) {
-                        return isFinite(ar.x1) && isFinite(ar.x2) && isFinite(ar.y1) && isFinite(ar.y2) &&
-                          ar.x2 > ar.x1 + 1 && ar.y2 > ar.y1 && ar.label && ar.label.length > 0;
+                        return isFinite(ar.y1) && isFinite(ar.y2) && ar.y2 > ar.y1 && ar.label && ar.label.length > 0;
                       }).map(function(ar, ai) {
+                        var x1 = xScaleZ(ar.fromNM), x2 = xScaleZ(ar.toNM);
+                        if (!isFinite(x1) || !isFinite(x2) || x2 < x1 + 1) return null;
                         return React.createElement("g", { key: "as" + ai },
                           React.createElement("rect", {
-                            x: ar.x1, y: ar.y1,
-                            width: Math.max(ar.x2 - ar.x1, 2),
+                            x: x1, y: ar.y1,
+                            width: Math.max(x2 - x1, 2),
                             height: Math.max(ar.y2 - ar.y1, 2),
                             fill: ar.color, fillOpacity: 0.25,
                             stroke: ar.color, strokeWidth: 1.5, strokeOpacity: 0.9,
                             strokeDasharray: ar.asClass === 'E' || ar.asClass === 'G' ? "4,3" : "none"
                           }),
                           React.createElement("text", {
-                            x: Math.max(ar.x1 + 1, ar.x1 + (ar.x2-ar.x1)/2), y: ar.y1 + 9,
+                            x: Math.max(x1 + 1, x1 + (x2-x1)/2), y: ar.y1 + 9,
                             textAnchor: "middle", fill: ar.color,
                             fontSize: 8, fontFamily: mono, opacity: 0.9
                           }, ar.label)
@@ -6227,14 +6288,14 @@
                       }),
                       // Warning zones
                       warnSegs.map(function(seg, si) {
-                        var x1 = xScale(dists[seg.from]), x2 = xScale(dists[seg.to]);
+                        var x1 = xScaleZ(dists[seg.from]), x2 = xScaleZ(dists[seg.to]);
                         return React.createElement("rect", { key: si, x: x1, y: PAD_T, width: Math.max(x2 - x1, 2), height: plotH, fill: "#ef4444", opacity: 0.12 });
                       }),
                       // Terrain fill
                       React.createElement("path", { d: terrainPath, fill: C.isLight ? "#92400e" : "#78350f", opacity: 0.7 }),
                       // Terrain outline
                       React.createElement("polyline", {
-                        points: elevs.map(function(e, i) { return xScale(dists[i]) + "," + yScale(e); }).join(" "),
+                        points: elevs.map(function(e, i) { return xScaleZ(dists[i]) + "," + yScale(e); }).join(" "),
                         fill: "none", stroke: C.isLight ? "#b45309" : "#d97706", strokeWidth: 1.5
                       }),
                       // Warning terrain highlight - separate segments to avoid diagonal lines
@@ -6245,7 +6306,7 @@
                           var fAlt = flightAltAtNM(dists[i]);
                           var close = fAlt - e < CLEARANCE && e > 0;
                           if (close) {
-                            cur.push(xScale(dists[i]) + "," + yScale(e));
+                            cur.push(xScaleZ(dists[i]) + "," + yScale(e));
                           } else {
                             if (cur.length > 1) segs.push(cur.join(" "));
                             cur = [];
@@ -6257,9 +6318,17 @@
                         });
                       })(),
                       // Flight path fill (semi-transparent)
-                      React.createElement("path", { d: fpFill, fill: C.green, opacity: 0.08 }),
+                      React.createElement("path", {
+                        d: "M" + xScaleZ(flightPathPts[0].nm) + "," + yScale(0) +
+                           " L" + flightPathPts.map(function(p) { return xScaleZ(p.nm) + "," + yScale(p.ft); }).join(" L") +
+                           " L" + xScaleZ(flightPathPts[flightPathPts.length-1].nm) + "," + yScale(0) + " Z",
+                        fill: C.green, opacity: 0.08
+                      }),
                       // Flight path line
-                      React.createElement("polyline", { points: fpPolyline, fill: "none", stroke: C.green, strokeWidth: 2 }),
+                      React.createElement("polyline", {
+                        points: flightPathPts.map(function(p) { return xScaleZ(p.nm) + "," + yScale(p.ft); }).join(" "),
+                        fill: "none", stroke: C.green, strokeWidth: 2
+                      }),
                       // TOC/TOD dots and labels
                       tocTodSvg,
                       // Dep/dest dots
@@ -6269,18 +6338,19 @@
                       // Waypoint vertical markers
                       waypoints.map(function(wp, wi) {
                         if (wi === 0 || wi === waypoints.length - 1) return null;
-                        var x = xScale(wpDists[wi]);
+                        var x = xScaleZ(wpDists[wi]);
                         return React.createElement("line", { key: wi, x1: x, y1: PAD_T, x2: x, y2: PAD_T + plotH, stroke: C.border, strokeWidth: 1, strokeDasharray: "2,3" });
-                      }),
-                      // X-axis waypoint labels
+                      })
+                      ), // close clipped g
+                      // X-axis waypoint labels — fixed positions at unzoomed x
                       waypoints.map(function(wp, wi) {
-                        var x = xScale(wpDists[wi]);
+                        var x = xScaleZ(wpDists[wi]);
                         var label = wp.id && wp.id.length <= 6 ? wp.id : (wp.id ? wp.id.substring(0, 5) : "WP" + wi);
                         return React.createElement("text", { key: wi, x: x, y: H - 4, textAnchor: wi === 0 ? "start" : wi === waypoints.length-1 ? "end" : "middle", fill: C.dim, fontSize: 9, fontFamily: mono }, label);
                       }),
-                      // Border
+                      // Border — always fixed
                       React.createElement("rect", { x: PAD_L, y: PAD_T, width: plotW, height: plotH, fill: "none", stroke: C.border, strokeWidth: 1 })
-                    );
+                    )); // close svg + wrapper div
                   })()}
                 </div>
               )}
